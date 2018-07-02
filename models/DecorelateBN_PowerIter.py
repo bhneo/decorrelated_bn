@@ -9,14 +9,12 @@ import tensorflow as tf
 
 class DecorelateBN_PowerIter:
     def __init__(self, nDim, m_perGroup, affine, nIter, momentum):
-        if affine:
-            assert type(affine) == bool
-            self.affine = affine
-        else:
-            self.affine = False
-
+        self.affine = affine
         if m_perGroup:
-            self.m_perGroup = m_perGroup == 0 and nDim or m_perGroup > nDim and nDim or m_perGroup
+            if m_perGroup == 0 or m_perGroup > nDim:
+                self.m_perGroup = nDim
+            else:
+                self.m_perGroup = m_perGroup
         else:
             self.m_perGroup = nDim / 2
 
@@ -31,6 +29,7 @@ class DecorelateBN_PowerIter:
         self.momentum = momentum or 0.1
         self.running_means = []
         self.running_projections = []
+
         self.centereds = []
         self.sigmas = []
         self.whiten_matrixs = []
@@ -40,32 +39,32 @@ class DecorelateBN_PowerIter:
         # allow nDim % m_perGroup != 0
         for i in range(start=1, stop=groups+1):
             if i < groups:
-                self.r_mean = np.zeros(m_perGroup)
-                self.r_projection = np.eye(m_perGroup)
+                self.running_means.append(np.zeros(m_perGroup))
+                self.running_projections.append(np.eye(m_perGroup))
             else:
-                self.r_mean = np.zeros(nDim-(groups-1)*self.m_perGroup)
-                self.r_projection = np.eye(nDim-(groups-1)*self.m_perGroup)
+                self.running_means.append(np.zeros(nDim-(groups-1)*self.m_perGroup))
+                self.running_projections.append(np.eye(nDim-(groups-1)*self.m_perGroup))
 
         if self.affine:
             print('---------------------------using scale-----------------')
-            self.weight = tf.Variable(tf.ones([nDim, 1]))
+            self.weight = tf.Variable(tf.truncated_normal([nDim, 1]))
             self.bias = tf.Variable(tf.zeros([nDim, 1]))
-            self.gradWeight = tf.Variable(tf.truncated_normal([nDim, 1]))
-            self.gradBias = tf.Variable(tf.truncated_normal([nDim, 1]))
             self.flag_inner_lr = False
             self.scale = 1
 
+        self.debug = False
         # flag, whether is train mode. in train mode we do whitening
         # based on the mini-batch. in test mode, we use estimated parameters (running parameter)
-        self.debug = False
         self.train = True
         # if this value set true, then use running parameter,
         # when do the training,  else false, use the previous parameters
+        self.testMode_isRunning = True
         self.count = 0
         self.printInterval = 1
 
-    def updateOutput(self, inputs):
-        def updateOutput_perGroup_train(nBatch, data, groupId):
+
+    def updateOutput(self, inputs, nBatch):
+        def updateOutput_perGroup_train(data, groupId):
             nFeature = data.get_shape()[1]
             mean = tf.reduce_mean(data, 0)
             self.running_means[groupId] = self.running_means[groupId] * (1 - self.momentum) + self.momentum * mean
@@ -97,9 +96,69 @@ class DecorelateBN_PowerIter:
             return centered, whitten_matrix
 
 
-    def updateOutput_perGroup_test(self, nBatch, data, groupId):
-        self.buffer = tf.tile(self.running_means[groupId], [nBatch])
-        self.buffer_1 = data - self.buffer
-        return self.buffer_1, self.running_projections[groupId]
+        def updateOutput_perGroup_test(data, groupId):
+            self.buffer = tf.tile(self.running_means[groupId], [nBatch])
+            self.buffer_1 = data - self.buffer
+            return self.buffer_1, self.running_projections[groupId]
+
+        nDim = inputs.get_shape()[1]
+        groups = np.floor((nDim - 1) / self.m_perGroup) + 1
+
+
+        """
+        self.output = self.output or input.new()
+        self.output: resizeAs(input)
+    
+        self.gradInput = self.gradInput or input.new()
+        self.gradInput: resizeAs(input)
+    
+        self.normalized = self.normalized or input.new()
+        #- -used for the affine transformation to calculate the gradient
+        self.normalized: resizeAs(input)
+        # buffers that are reused
+        self.buffer = self.buffer or input.new()
+        self.buffer_1 = self.buffer_1 or input.new()
+        self.buffer_2 = self.buffer_2 or input.new()
+        """
+        if not self.train:
+            if self.debug:
+                print('--------------------------DBN:test mode***update output***-------------------')
+            for i in range(start=1, stop=groups):
+                start_index = (i - 1) * self.m_perGroup + 1
+                end_index = np.min((i * self.m_perGroup, nDim))
+                self.output[{{}, {start_index, end_index}}] = updateOutput_perGroup_test(inputs[:, start_index:end_index], i)
+        else: # training mode, initialize the group parameters
+            self.sigmas = []
+            self.set_Xs = []
+            self.centereds = []
+            self.whiten_matrixs = []
+            if self.debug:
+                print('--------------------------DBN:train mode***update output***-------------------')
+            for i in range(start=1, stop=groups):
+                start_index = (i - 1) * self.m_perGroup + 1
+                end_index = np.min((i * self.m_perGroup, nDim))
+                self.output[{{}, {start_index, end_index}}] = updateOutput_perGroup_train(inputs[:, start_index:end_index], i)
+
+        # scale the output
+        if self.affine:
+            # multiply with gamma and add beta
+            # self.buffer: repeatTensor(self.weight, input:size(1), 1)
+            # self.output: cmul(self.buffer)
+            # self.buffer: repeatTensor(self.bias, input:size(1), 1)
+            # self.output: add(self.buffer)
+            self.output = self.output * self.weight + self.bias
+
+        if self.debug:
+            self.buffer_1: resize(nDim, nDim)
+            self.buffer_1: addmm(0, self.buffer_1, 1 / nBatch, tf.matrix_transpose(self.output), self.output)
+            # the validate matrix
+            print("------debug_DBN_module:diagonal of validate matrix------")
+            # print(self.buffer_1)
+            for i in range(start=1, stop=self.buffer_1.shape[0]):
+                print(i, ': ', self.buffer_1[i][i])
+
+        #  print('---------DBN:output-------')
+        #  print(self.output)
+        return self.output
 
 
