@@ -30,10 +30,7 @@ class DecorelateBN_PowerIter:
         self.running_means = []
         self.running_projections = []
 
-        self.centereds = []
-        self.sigmas = []
-        self.whiten_matrixs = []
-        self.set_Xs = []
+        self.summaries = []
 
         groups = np.floor((nDim - 1) / self.m_perGroup) + 1
         # allow nDim % m_perGroup != 0
@@ -62,45 +59,44 @@ class DecorelateBN_PowerIter:
         self.count = 0
         self.printInterval = 1
 
+    def updateOutput_perGroup_train(self, data, groupId):
+        nFeature = data.get_shape()[1]
+        mean = tf.reduce_mean(data, 0)
+        self.running_means[groupId] = self.running_means[groupId] * (1 - self.momentum) + self.momentum * mean
 
-    def updateOutput(self, inputs, nBatch):
-        def updateOutput_perGroup_train(data, groupId):
-            nFeature = data.get_shape()[1]
-            mean = tf.reduce_mean(data, 0)
-            self.running_means[groupId] = self.running_means[groupId] * (1 - self.momentum) + self.momentum * mean
+        centered = data - mean
 
-            centered = data - mean
+        sigma = tf.reduce_mean(tf.matmul(tf.matrix_transpose(centered), centered), 0)
 
-            sigma = tf.reduce_mean(tf.matmul(tf.matrix_transpose(centered), centered), 0)
+        trace = tf.trace(sigma)
+        sigma_norm = sigma / trace
 
-            trace = tf.trace(sigma)
-            sigma_norm = sigma/trace
+        set_X = []
+        X = tf.eye(nFeature)
+        for i in range(self.nIter):
+            X = (3 * X - X * X * X * sigma_norm) / 2
+            set_X.append(X)
 
-            set_X = []
-            X = tf.eye(nFeature)
-            for i in range(self.nIter):
-                X = (3*X-X*X*X*sigma_norm) / 2
-                set_X.append(X)
+        whitten_matrix = X / tf.sqrt(trace)
+        self.running_projections[groupId] = self.running_projections[groupId] * (
+                    1 - self.momentum) + self.momentum * whitten_matrix
 
-            whitten_matrix = X/tf.sqrt(trace)
-            self.running_projections[groupId] = self.running_projections[groupId] * (1 - self.momentum) + self.momentum * whitten_matrix
+        if self.debug:
+            pass
 
-            if self.debug:
-                pass
+        self.centereds.append(centered)
+        self.sigmas.append(sigma)
+        self.whiten_matrixs.append(whitten_matrix)
+        self.set_Xs.append(set_X)
 
-            self.centereds.append(centered)
-            self.sigmas.append(sigma)
-            self.whiten_matrixs.append(whitten_matrix)
-            self.set_Xs.append(set_X)
+        return centered, whitten_matrix
 
-            return centered, whitten_matrix
+    def updateOutput_perGroup_test(self, nBatch, data, groupId):
+        self.buffer = tf.tile(self.running_means[groupId], [nBatch])
+        self.buffer_1 = data - self.buffer
+        return self.buffer_1, self.running_projections[groupId]
 
-
-        def updateOutput_perGroup_test(data, groupId):
-            self.buffer = tf.tile(self.running_means[groupId], [nBatch])
-            self.buffer_1 = data - self.buffer
-            return self.buffer_1, self.running_projections[groupId]
-
+    def updateOutput(self, inputs):
         nDim = inputs.get_shape()[1]
         groups = np.floor((nDim - 1) / self.m_perGroup) + 1
 
@@ -126,8 +122,8 @@ class DecorelateBN_PowerIter:
             for i in range(start=1, stop=groups):
                 start_index = (i - 1) * self.m_perGroup + 1
                 end_index = np.min((i * self.m_perGroup, nDim))
-                self.output[{{}, {start_index, end_index}}] = updateOutput_perGroup_test(inputs[:, start_index:end_index], i)
-        else: # training mode, initialize the group parameters
+                self.output[:, start_index:end_index] = self.updateOutput_perGroup_test(inputs[:, start_index:end_index], i)
+        else:  # training mode, initialize the group parameters
             self.sigmas = []
             self.set_Xs = []
             self.centereds = []
@@ -137,7 +133,7 @@ class DecorelateBN_PowerIter:
             for i in range(start=1, stop=groups):
                 start_index = (i - 1) * self.m_perGroup + 1
                 end_index = np.min((i * self.m_perGroup, nDim))
-                self.output[{{}, {start_index, end_index}}] = updateOutput_perGroup_train(inputs[:, start_index:end_index], i)
+                self.output[:, start_index:end_index] = self.updateOutput_perGroup_train(inputs[:, start_index:end_index], i)
 
         # scale the output
         if self.affine:
@@ -148,14 +144,14 @@ class DecorelateBN_PowerIter:
             # self.output: add(self.buffer)
             self.output = self.output * self.weight + self.bias
 
-        if self.debug:
-            self.buffer_1: resize(nDim, nDim)
-            self.buffer_1: addmm(0, self.buffer_1, 1 / nBatch, tf.matrix_transpose(self.output), self.output)
-            # the validate matrix
-            print("------debug_DBN_module:diagonal of validate matrix------")
-            # print(self.buffer_1)
-            for i in range(start=1, stop=self.buffer_1.shape[0]):
-                print(i, ': ', self.buffer_1[i][i])
+        # if self.debug:
+        #     self.buffer_1: resize(nDim, nDim)
+        #     self.buffer_1: addmm(0, self.buffer_1, 1 / nBatch, tf.matrix_transpose(self.output), self.output)
+        #     # the validate matrix
+        #     print("------debug_DBN_module:diagonal of validate matrix------")
+        #     # print(self.buffer_1)
+        #     for i in range(start=1, stop=self.buffer_1.shape[0]):
+        #         print(i, ': ', self.buffer_1[i][i])
 
         #  print('---------DBN:output-------')
         #  print(self.output)
