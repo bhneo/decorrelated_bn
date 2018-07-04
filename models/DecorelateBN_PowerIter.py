@@ -36,11 +36,11 @@ class DecorelateBN_PowerIter:
         # allow nDim % m_perGroup != 0
         for i in range(start=1, stop=groups+1):
             if i < groups:
-                self.running_means.append(np.zeros(m_perGroup))
-                self.running_projections.append(np.eye(m_perGroup))
+                self.running_means.append(tf.zeros(m_perGroup))
+                self.running_projections.append(tf.eye(m_perGroup))
             else:
-                self.running_means.append(np.zeros(nDim-(groups-1)*self.m_perGroup))
-                self.running_projections.append(np.eye(nDim-(groups-1)*self.m_perGroup))
+                self.running_means.append(tf.zeros(nDim-(groups-1)*self.m_perGroup))
+                self.running_projections.append(tf.eye(nDim-(groups-1)*self.m_perGroup))
 
         if self.affine:
             print('---------------------------using scale-----------------')
