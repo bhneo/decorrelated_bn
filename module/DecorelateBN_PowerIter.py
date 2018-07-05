@@ -7,8 +7,14 @@ import numpy as np
 import tensorflow as tf
 
 
+def buildDBN(inputs, train):
+    nDim = inputs.get_shape()[1]
+    DBN = DecorelateBN_PowerIter(nDim, train)
+    return DBN.updateOutput(inputs)
+
+
 class DecorelateBN_PowerIter:
-    def __init__(self, nDim, m_perGroup, affine, nIter, momentum):
+    def __init__(self, nDim, train, m_perGroup=None, affine=False, nIter=5, momentum=0.1, debug=False, testMode_isRunning=True):
         self.affine = affine
         if m_perGroup:
             if m_perGroup == 0 or m_perGroup > nDim:
@@ -26,11 +32,17 @@ class DecorelateBN_PowerIter:
         print('m_perGroup:', self.m_perGroup, '----nIter:', self.nIter)
 
         self.nDim = nDim  # the dimension of the input
-        self.momentum = momentum or 0.1
+        self.groups = np.floor((nDim - 1) / self.m_perGroup) + 1
+        self.momentum = momentum
         self.running_means = []
         self.running_projections = []
 
         self.summaries = []
+
+        self.sigmas = []
+        self.set_Xs = []
+        self.centereds = []
+        self.whiten_matrixs = []
 
         groups = np.floor((nDim - 1) / self.m_perGroup) + 1
         # allow nDim % m_perGroup != 0
@@ -49,13 +61,13 @@ class DecorelateBN_PowerIter:
             self.flag_inner_lr = False
             self.scale = 1
 
-        self.debug = False
+        self.debug = debug
         # flag, whether is train mode. in train mode we do whitening
         # based on the mini-batch. in test mode, we use estimated parameters (running parameter)
-        self.train = True
+        self.train = train
         # if this value set true, then use running parameter,
         # when do the training,  else false, use the previous parameters
-        self.testMode_isRunning = True
+        self.testMode_isRunning = testMode_isRunning
         self.count = 0
         self.printInterval = 1
 
@@ -97,10 +109,6 @@ class DecorelateBN_PowerIter:
         return self.buffer_1, self.running_projections[groupId]
 
     def updateOutput(self, inputs):
-        nDim = inputs.get_shape()[1]
-        groups = np.floor((nDim - 1) / self.m_perGroup) + 1
-
-
         """
         self.output = self.output or input.new()
         self.output: resizeAs(input)
@@ -116,45 +124,24 @@ class DecorelateBN_PowerIter:
         self.buffer_1 = self.buffer_1 or input.new()
         self.buffer_2 = self.buffer_2 or input.new()
         """
-        if not self.train:
-            if self.debug:
-                print('--------------------------DBN:test mode***update output***-------------------')
-            for i in range(start=1, stop=groups):
-                start_index = (i - 1) * self.m_perGroup + 1
-                end_index = np.min((i * self.m_perGroup, nDim))
+        def updateOutputOnEvaluate():
+            for i in range(self.groups):
+                start_index = i * self.m_perGroup
+                end_index = np.min(((i+1) * self.m_perGroup, self.nDim))
                 self.output[:, start_index:end_index] = self.updateOutput_perGroup_test(inputs[:, start_index:end_index], i)
-        else:  # training mode, initialize the group parameters
-            self.sigmas = []
-            self.set_Xs = []
-            self.centereds = []
-            self.whiten_matrixs = []
-            if self.debug:
-                print('--------------------------DBN:train mode***update output***-------------------')
-            for i in range(start=1, stop=groups):
-                start_index = (i - 1) * self.m_perGroup + 1
-                end_index = np.min((i * self.m_perGroup, nDim))
+
+        def updateOutputOnTrain():
+            for i in range(self.groups):
+                start_index = i * self.m_perGroup
+                end_index = np.min(((i+1) * self.m_perGroup, self.nDim))
                 self.output[:, start_index:end_index] = self.updateOutput_perGroup_train(inputs[:, start_index:end_index], i)
+
+        tf.cond(self.train, updateOutputOnTrain, updateOutputOnEvaluate)
 
         # scale the output
         if self.affine:
             # multiply with gamma and add beta
-            # self.buffer: repeatTensor(self.weight, input:size(1), 1)
-            # self.output: cmul(self.buffer)
-            # self.buffer: repeatTensor(self.bias, input:size(1), 1)
-            # self.output: add(self.buffer)
             self.output = self.output * self.weight + self.bias
-
-        # if self.debug:
-        #     self.buffer_1: resize(nDim, nDim)
-        #     self.buffer_1: addmm(0, self.buffer_1, 1 / nBatch, tf.matrix_transpose(self.output), self.output)
-        #     # the validate matrix
-        #     print("------debug_DBN_module:diagonal of validate matrix------")
-        #     # print(self.buffer_1)
-        #     for i in range(start=1, stop=self.buffer_1.shape[0]):
-        #         print(i, ': ', self.buffer_1[i][i])
-
-        #  print('---------DBN:output-------')
-        #  print(self.output)
         return self.output
 
 
