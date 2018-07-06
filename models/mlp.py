@@ -1,5 +1,7 @@
 from tensorflow.examples.tutorials.mnist import input_data
 import tensorflow as tf
+from tqdm import tqdm
+import module.DecorelateBN_PowerIter as dbn
 
 
 flags = tf.app.flags
@@ -9,79 +11,85 @@ flags = tf.app.flags
 #    hyper parameters      #
 ############################
 
-# for training
 flags.DEFINE_integer('batch_size', 128, 'batch size')
-flags.DEFINE_integer('epoch', 1, 'epoch')
+flags.DEFINE_integer('steps', 10000, 'steps')
 flags.DEFINE_integer('iter_routing', 3, 'number of iterations in routing algorithm')
 flags.DEFINE_integer('save_summaries_steps', 10, 'the frequency of saving train summary(step)')
 flags.DEFINE_integer('save_checkpoint_steps', 200, 'the frequency of saving model')
+flags.DEFINE_list('layers', [100, 100, 100, 100], 'mlp layers')
+flags.DEFINE_float('lr', 0.01, 'learning rate')
 
 ############################
 #   environment setting    #
 ############################
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
 flags.DEFINE_string('logdir', 'logdir', 'logs directory')
+flags.DEFINE_boolean('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 
 cfg = tf.app.flags.FLAGS
 
 
 def train():
-    # MNIST数据存放的路径
-    file = "./MNIST"
-
-    # 导入数据
+    file = "data/mnist"
     mnist = input_data.read_data_sets(file, one_hot=True)
 
-    # 模型的输入和输出
+    # inputs
     x = tf.placeholder(tf.float32, shape=[None, 784])
-    y_ = tf.placeholder(tf.float32, shape=[None, 10])
+    y = tf.placeholder(tf.float32, shape=[None, 10])
+    is_training = tf.placeholder(tf.bool, shape=[])
+    summary = []
 
-    # 模型的权重和偏移量
-    W = tf.Variable(tf.zeros([784, 10]))
-    b = tf.Variable(tf.zeros([10]))
+    for i in cfg.layers:
+        layer = tf.layers.dense(x, 100, activation=None)
+        if cfg.mode == 'plain':
+            pass
+        elif cfg.mode == 'bn':
+            layer = tf.layers.batch_normalization(layer, training=is_training)
+        elif cfg.mode == 'dbn':
+            layer = dbn.buildDBN(layer, is_training)
+        layer = tf.nn.sigmoid(layer)
+        summary.append(tf.summary.histogram('layer{}'.format(i), layer))
 
-    # 创建Session
-    sess = tf.InteractiveSession()
-    # 初始化权重变量
-    sess.run(tf.global_variables_initializer())
+    logits = layer
+    outputs = tf.nn.softmax(logits)
+    summary.append(tf.summary.histogram('outputs', outputs))
+    loss = tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=logits)
+    summary.append(tf.summary.scalar('loss', loss))
+    train_op = tf.train.GradientDescentOptimizer(cfg.lr).minimize(loss)
 
-    y = tf.nn.softmax(tf.matmul(x, W) + b)
-
-    # 交叉熵
-    cross_entropy = -tf.reduce_sum(y_ * tf.log(y))
-
-    # 训练
-    train_step = tf.train.GradientDescentOptimizer(0.01).minimize(cross_entropy)
-    for i in range(1000):
-        batch = mnist.train.next_batch(50)
-        train_step.run(feed_dict={x: batch[0], y_: batch[1]})
-
-    # 测试
-    correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
+    correct_prediction = tf.equal(tf.argmax(outputs, 1), tf.argmax(y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-    print(sess.run(accuracy, feed_dict={x: mnist.test.images, y_: mnist.test.labels}))
+    summary.append(tf.summary.scalar('accuracy', accuracy))
 
-def evaluate():
-    pass
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        train_writer = tf.summary.FileWriter(cfg.logdir + '/train_' + cfg.mode, sess.graph)
+        valid_writer = tf.summary.FileWriter(cfg.logdir + '/valid_' + cfg.mode)
 
+        # train
+        bar = tqdm(range(cfg.steps), ncols=70, leave=False, unit='b')
+        for i in bar:
+            if i % cfg.save_summaries_steps == 0:
+                train_batch = mnist.validation.next_batch(cfg.batch_size)
+                train_loss, train_acc, train_summary = sess.run([loss, accuracy, summary], feed_dict={x: train_batch[0], y: train_batch[1]})
+                train_writer.add_summary(train_summary, i)
+
+                valid_batch = mnist.validation.next_batch(cfg.batch_size)
+                valid_loss, valid_acc, valid_summary = sess.run([loss, accuracy, summary],
+                                                                feed_dict={x: valid_batch[0], y: valid_batch[1]})
+                valid_writer.add_summary(valid_summary, i)
+            else:
+                batch = mnist.train.next_batch(cfg.batch_size)
+                sess.run(train_op, feed_dict={x: batch[0], y: batch[1]})
+        bar.close()
+
+    train_writer.close()
+    valid_writer.close()
 
 
 def main(_):
-    if cfg.model == 'vector':
-        from models.vector_caps_model import CapsNet as Model
-    elif cfg.model == 'matrix':
-        from models.matrix_caps_model import CapsNet as Model
-    else:
-        from models.baseline import Model
+    train()
 
-    model = Model()
-
-    if cfg.is_training:
-        tf.logging.info(' Start training...')
-        train(model)
-        tf.logging.info('Training done')
-    else:
-        evaluation(model)
 
 if __name__ == "__main__":
     tf.app.run()
