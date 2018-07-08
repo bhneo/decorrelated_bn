@@ -1,7 +1,7 @@
-from tensorflow.examples.tutorials.mnist import input_data
 import tensorflow as tf
 from tqdm import tqdm
 import module.DecorelateBN_PowerIter as dbn
+from models import mnist_input
 
 
 flags = tf.app.flags
@@ -24,14 +24,17 @@ flags.DEFINE_float('lr', 0.01, 'learning rate')
 ############################
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
 flags.DEFINE_string('logdir', 'logdir', 'logs directory')
-flags.DEFINE_boolean('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
+flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 
 cfg = tf.app.flags.FLAGS
 
 
+def get_batch(X, y, idx, batch_size, batch_num):
+    if idx
+
+
 def train():
-    file = "data/mnist"
-    mnist = input_data.read_data_sets(file, one_hot=True)
+    trX, trY, num_tr_batch, valX, valY, num_val_batch = mnist_input.load_mnist('mnist')
 
     # inputs
     x = tf.placeholder(tf.float32, shape=[None, 784])
@@ -76,7 +79,7 @@ def train():
 
                 valid_batch = mnist.validation.next_batch(cfg.batch_size)
                 valid_loss, valid_acc, valid_summary = sess.run([loss, accuracy, summary],
-                                                                feed_dict={x: valid_batch[0], y: valid_batch[1]})
+                                                                feed_dict={x: valX, y: valY})
                 valid_writer.add_summary(valid_summary, i)
             else:
                 batch = mnist.train.next_batch(cfg.batch_size)
