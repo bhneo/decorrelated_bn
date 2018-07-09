@@ -21,9 +21,8 @@ def load_mnist(batch_size, is_training=True):
         valY = trainY[55000:]
 
         num_tr_batch = 55000 // batch_size
-        num_val_batch = 5000 // batch_size
 
-        return trX, trY, num_tr_batch, valX, valY, num_val_batch
+        return trX, trY, valX, valY, 10, num_tr_batch
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -55,9 +54,8 @@ def load_fashion_mnist(batch_size, is_training=True):
         valY = trainY[55000:]
 
         num_tr_batch = 55000 // batch_size
-        num_val_batch = 5000 // batch_size
 
-        return trX, trY, num_tr_batch, valX, valY, num_val_batch
+        return trX, trY, valX, valY, 10, num_tr_batch
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -80,19 +78,18 @@ def load_data(dataset, batch_size, is_training=True, one_hot=False):
         raise Exception('Invalid dataset, please check the name of dataset:', dataset)
 
 
-def get_batch_data(dataset, batch_size, num_threads=1):
-    if dataset == 'mnist':
-        trX, trY, num_tr_batch, valX, valY, num_val_batch = load_mnist(batch_size, is_training=True)
-    elif dataset == 'fashion-mnist':
-        trX, trY, num_tr_batch, valX, valY, num_val_batch = load_fashion_mnist(batch_size, is_training=True)
-    else:
-        raise Exception('Invalid dataset, please check the name of dataset:', dataset)
+def create_train_set(dataset, handle, batch_size=128, n_repeat=-1):
+    tr_x, tr_y, val_x, val_y, num_label, num_batch = load_data(dataset, batch_size, is_training=True)
 
-    data_queues = tf.train.slice_input_producer([trX, trY])
-    X, Y = tf.train.shuffle_batch(data_queues, num_threads=num_threads,
-                                  batch_size=batch_size,
-                                  capacity=batch_size * 64,
-                                  min_after_dequeue=batch_size * 32,
-                                  allow_smaller_final_batch=False)
+    tr_data_set = tf.data.Dataset.from_tensor_slices((tr_x, tr_y)).repeat(n_repeat).batch(batch_size)
+    val_data_set = tf.data.Dataset.from_tensor_slices((val_x, val_y)).repeat(n_repeat).batch(batch_size)
 
-    return X, Y
+    feed_iterator = tf.data.Iterator.from_string_handle(handle, tr_data_set.output_types,
+                                                        tr_data_set.output_shapes)
+    X, y = feed_iterator.get_next()
+    # 创建不同的iterator
+    train_iterator = tr_data_set.make_one_shot_iterator()
+    val_iterator = val_data_set.make_one_shot_iterator()
+
+    return X, y, train_iterator, val_iterator, num_label, num_batch
+
