@@ -12,7 +12,7 @@ flags = tf.app.flags
 ############################
 
 flags.DEFINE_integer('batch_size', 256, 'batch size')
-flags.DEFINE_integer('steps', 10000, 'steps')
+flags.DEFINE_integer('steps', 50000, 'steps')
 flags.DEFINE_integer('iter_routing', 3, 'number of iterations in routing algorithm')
 flags.DEFINE_integer('save_summaries_steps', 10, 'the frequency of saving train summary(step)')
 flags.DEFINE_integer('save_checkpoint_steps', 200, 'the frequency of saving model')
@@ -23,8 +23,8 @@ flags.DEFINE_float('lr', 0.01, 'learning rate')
 #   environment setting    #
 ############################
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
-flags.DEFINE_string('logdir', 'logdir', 'logs directory')
-flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
+flags.DEFINE_string('logdir', 'logdir_', 'logs directory')
+flags.DEFINE_string('mode', 'dbn', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 
 cfg = tf.app.flags.FLAGS
 
@@ -36,15 +36,16 @@ def train():
     is_training = tf.placeholder(tf.bool, shape=[])
     summary = []
 
-    for i in cfg.layers:
-        layer = tf.layers.dense(X, 100, activation=None)
+    layer = X
+    for i in range(len(cfg.layers)):
+        layer = tf.layers.dense(layer, cfg.layers[i], activation=None, name='layer{}'.format(i))
         if cfg.mode == 'plain':
             pass
         elif cfg.mode == 'bn':
             layer = tf.layers.batch_normalization(layer, training=is_training)
         elif cfg.mode == 'dbn':
-            layer = dbn.buildDBN(layer, is_training)
-        layer = tf.nn.sigmoid(layer)
+            layer = dbn.buildDBN(layer, is_training, summary)
+        layer = tf.nn.relu(layer)
         summary.append(tf.summary.histogram('layer{}'.format(i), layer))
 
     logits = tf.layers.dense(layer, num_label, activation=None)
@@ -70,15 +71,15 @@ def train():
         # train
         bar = tqdm(range(cfg.steps), ncols=70, leave=False, unit='b')
         for i in bar:
-            if i % cfg.save_summaries_steps == 0:
+            if i % cfg.save_summaries_steps == 0 and i != 0:
                 train_loss, train_acc, train_summary = sess.run([loss, accuracy, merged_summary],
                                                                 feed_dict={handle: train_handle,
-                                                                           is_training: False})
+                                                                           is_training: True})
                 train_writer.add_summary(train_summary, i)
 
                 valid_loss, valid_acc, valid_summary = sess.run([loss, accuracy, merged_summary],
                                                                 feed_dict={handle: val_handle,
-                                                                           is_training: False})
+                                                                           is_training: True})
                 valid_writer.add_summary(valid_summary, i)
             else:
                 sess.run(train_op, feed_dict={handle: train_handle, is_training: True})
