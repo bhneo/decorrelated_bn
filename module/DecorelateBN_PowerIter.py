@@ -14,7 +14,7 @@ def buildDBN(inputs, train, summary=[]):
 
 
 class DecorelateBN_PowerIter:
-    def __init__(self, nDim, train, summary, m_perGroup=None, affine=False, nIter=5, momentum=0.1, debug=False, testMode_isRunning=True):
+    def __init__(self, nDim, train, summary, m_perGroup=0, affine=False, nIter=5, momentum=0.1, debug=False, testMode_isRunning=True):
         self.affine = affine
         self.summaries = summary
         if m_perGroup:
@@ -26,8 +26,6 @@ class DecorelateBN_PowerIter:
             self.m_perGroup = nDim // 2
 
         self.nIter = nIter
-
-        print('m_perGroup:', self.m_perGroup, '----nIter:', self.nIter)
 
         self.nDim = nDim  # the dimension of the input
         self.groups = int(np.floor((nDim - 1) / self.m_perGroup) + 1)
@@ -44,11 +42,11 @@ class DecorelateBN_PowerIter:
         # allow nDim % m_perGroup != 0
         for i in range(0,  groups):
             if i < groups-1:
-                self.running_means.append(tf.zeros(self.m_perGroup))
-                self.running_projections.append(tf.eye(self.m_perGroup))
+                self.running_means.append(tf.Variable(tf.zeros(self.m_perGroup), trainable=False))
+                self.running_projections.append(tf.Variable(tf.eye(self.m_perGroup), trainable=False))
             else:
-                self.running_means.append(tf.zeros(nDim-(groups-1)*self.m_perGroup))
-                self.running_projections.append(tf.eye(nDim-(groups-1)*self.m_perGroup))
+                self.running_means.append(tf.Variable(tf.zeros(nDim-(groups-1)*self.m_perGroup), trainable=False))
+                self.running_projections.append(tf.Variable(tf.eye(nDim-(groups-1)*self.m_perGroup), trainable=False))
 
         if self.affine:
             print('---------------------------using scale-----------------')
@@ -70,14 +68,14 @@ class DecorelateBN_PowerIter:
     def updateOutput_perGroup_train(self, data, groupId):
         nFeature = data.get_shape().as_list()[1]
         mean = tf.reduce_mean(data, 0)
-        self.running_means[groupId] = self.running_means[groupId] * (1 - self.momentum) + self.momentum * mean
+        update_means = tf.assign(self.running_means[groupId], self.running_means[groupId] * (1 - self.momentum) + mean * self.momentum)
 
         centered = tf.expand_dims(data - mean, -1)
-        self.summaries.append(tf.summary.histogram('group{} centered'.format(groupId), centered))
+        # self.summaries.append(tf.summary.histogram('group{}_centered'.format(groupId), centered))
 
         sigma = tf.matmul(centered, tf.matrix_transpose(centered))
         sigma = tf.reduce_mean(sigma, 0)
-        self.summaries.append(tf.summary.histogram('group{} sigma'.format(groupId), sigma))
+        # self.summaries.append(tf.summary.histogram('group{}_sigma'.format(groupId), sigma))
 
         trace = tf.trace(sigma)
         sigma_norm = sigma / trace
@@ -87,15 +85,16 @@ class DecorelateBN_PowerIter:
         for i in range(self.nIter):
             X = (3 * X - X * X * X * sigma_norm) / 2
             set_X.append(X)
-        self.summaries.append(tf.summary.histogram('group{} X'.format(groupId), X))
+        # self.summaries.append(tf.summary.histogram('group{}_X'.format(groupId), X))
 
         whitten_matrix = X / tf.sqrt(trace)
-        self.summaries.append(tf.summary.histogram('group{} whitten_matrix'.format(groupId), whitten_matrix))
-        self.running_projections[groupId] = self.running_projections[groupId] * (
-                    1 - self.momentum) + self.momentum * whitten_matrix
+        # self.summaries.append(tf.summary.histogram('group{}_whitten_matrix'.format(groupId), whitten_matrix))
 
-        self.summaries.append(tf.summary.histogram('group{} running mean'.format(groupId), self.running_means[groupId]))
-        self.summaries.append(tf.summary.histogram('group{} running projections'.format(groupId), self.running_projections[groupId]))
+        update_projections = tf.assign(self.running_projections[groupId],
+                                 self.running_projections[groupId] * (1 - self.momentum) + whitten_matrix * self.momentum)
+
+        # self.summaries.append(tf.summary.histogram('group{}_running_mean'.format(groupId), self.running_means[groupId]))
+        # self.summaries.append(tf.summary.histogram('group{}_running_projections'.format(groupId), self.running_projections[groupId]))
 
         if self.debug:
             pass
@@ -104,8 +103,8 @@ class DecorelateBN_PowerIter:
         self.sigmas.append(sigma)
         self.whiten_matrixs.append(whitten_matrix)
         self.set_Xs.append(set_X)
-
-        return tf.matmul(tf.squeeze(centered), whitten_matrix)
+        with tf.control_dependencies([update_means, update_projections]):
+            return tf.matmul(tf.squeeze(centered), whitten_matrix)
 
     def updateOutput_perGroup_test(self, data, groupId):
         # self.buffer = tf.tile(self.running_means[groupId], [nBatch])
@@ -113,30 +112,19 @@ class DecorelateBN_PowerIter:
         return tf.matmul(centered, self.running_projections[groupId])
 
     def updateOutput(self, inputs):
-        outputs_train = []
-        outputs_test = []
-        self.output = tf.zeros_like(inputs)
-        def updateOutputOnEvaluate():
-            for i in range(self.groups):
-                start_index = i * self.m_perGroup
-                end_index = np.min(((i+1) * self.m_perGroup, self.nDim))
-                output = self.updateOutput_perGroup_test(inputs[:, start_index:end_index], i)
-                outputs_test.append(output)
-                # self.output[:, start_index:end_index] = self.updateOutput_perGroup_test(inputs[:, start_index:end_index], i)
-            result = tf.concat(outputs_test, 1)
-            return result
+        outputs = []
+        for i in range(self.groups):
+            start_index = i * self.m_perGroup
+            end_index = np.min(((i + 1) * self.m_perGroup, self.nDim))
+            group_input = inputs[:, start_index:end_index]
+            def updateOutputOnEvaluate():
+                return self.updateOutput_perGroup_test(group_input, i)
 
-        def updateOutputOnTrain():
-            for i in range(self.groups):
-                start_index = i * self.m_perGroup
-                end_index = np.min(((i+1) * self.m_perGroup, self.nDim))
-                output = self.updateOutput_perGroup_train(inputs[:, start_index:end_index], i)
-                outputs_train.append(output)
-                # self.output[:, start_index:end_index] = self.updateOutput_perGroup_train(inputs[:, start_index:end_index], i)
-            result = tf.concat(outputs_train, 1)
-            return result
-
-        self.output = tf.cond(self.train, updateOutputOnTrain, updateOutputOnEvaluate)
+            def updateOutputOnTrain():
+                return self.updateOutput_perGroup_train(group_input, i)
+            output = tf.cond(self.train, updateOutputOnTrain, updateOutputOnEvaluate)
+            outputs.append(output)
+        self.output = tf.concat(outputs, 1)
 
         # scale the output
         if self.affine:
