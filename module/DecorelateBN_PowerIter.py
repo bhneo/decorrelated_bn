@@ -8,7 +8,10 @@ import tensorflow as tf
 
 
 def buildDBN(inputs, train, summary=[]):
-    nDim = inputs.get_shape().as_list()[1]
+    input_shape = inputs.get_shape().as_list()
+    assert (len(input_shape) != 2 or len(input_shape) != 4), \
+        'only 4D or 2D tensor supported, got {}D tensor instead'.format(len(input_shape))
+    nDim = input_shape[1]
     DBN = DecorelateBN_PowerIter(nDim, train, summary)
     return DBN.updateOutput(inputs)
 
@@ -68,7 +71,8 @@ class DecorelateBN_PowerIter:
     def updateOutput_perGroup_train(self, data, groupId):
         nFeature = data.get_shape().as_list()[1]
         mean = tf.reduce_mean(data, 0)
-        update_means = tf.assign(self.running_means[groupId], self.running_means[groupId] * (1 - self.momentum) + mean * self.momentum)
+        update_means = tf.assign(self.running_means[groupId],
+                                 self.running_means[groupId] * (1 - self.momentum) + mean * self.momentum)
 
         centered = tf.expand_dims(data - mean, -1)
         # self.summaries.append(tf.summary.histogram('group{}_centered'.format(groupId), centered))
@@ -112,6 +116,27 @@ class DecorelateBN_PowerIter:
         return tf.matmul(centered, self.running_projections[groupId])
 
     def updateOutput(self, inputs):
+        outputs = []
+        for i in range(self.groups):
+            start_index = i * self.m_perGroup
+            end_index = np.min(((i + 1) * self.m_perGroup, self.nDim))
+            group_input = inputs[:, start_index:end_index]
+            def updateOutputOnEvaluate():
+                return self.updateOutput_perGroup_test(group_input, i)
+
+            def updateOutputOnTrain():
+                return self.updateOutput_perGroup_train(group_input, i)
+            output = tf.cond(self.train, updateOutputOnTrain, updateOutputOnEvaluate)
+            outputs.append(output)
+        self.output = tf.concat(outputs, 1)
+
+        # scale the output
+        if self.affine:
+            # multiply with gamma and add beta
+            self.output = self.output * self.weight + self.bias
+        return self.output
+
+    def updateOutput4D(self, inputs):
         outputs = []
         for i in range(self.groups):
             start_index = i * self.m_perGroup
