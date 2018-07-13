@@ -145,10 +145,11 @@ class DecorelateBNPowerIter:
 
         outputs = self.updateOutput2D(inputs_trans, train, self.affine)
         outputs = tf.transpose(outputs, [1, 0])
-        outputs = tf.reshape(outputs, [self.nDim, -1, self.iH, self.iW])
         if self.data_format == 'channels_last':
-            self.output = tf.transpose(outputs, [1, 2, 3, 0])
+            outputs = tf.reshape(outputs, [self.nDim, self.iH, self.iW, -1])
+            self.output = tf.transpose(outputs, [3, 1, 2, 0])
         else:
+            outputs = tf.reshape(outputs, [self.nDim, -1, self.iH, self.iW])
             self.output = tf.transpose(outputs, [1, 0, 2, 3])
 
         return self.output

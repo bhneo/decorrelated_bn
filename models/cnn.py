@@ -12,7 +12,7 @@ flags = tf.app.flags
 ############################
 
 flags.DEFINE_integer('batch_size', 256, 'batch size')
-flags.DEFINE_integer('steps', 3000, 'steps')
+flags.DEFINE_integer('steps', 2000, 'steps')
 flags.DEFINE_integer('save_summaries_steps', 10, 'the frequency of saving train summary(step)')
 flags.DEFINE_integer('save_checkpoint_steps', 200, 'the frequency of saving model')
 flags.DEFINE_list('filter', [64, 64, 64], 'mlp layers')
@@ -23,8 +23,8 @@ flags.DEFINE_float('lr', 0.1, 'learning rate')
 #   environment setting    #
 ############################
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
-flags.DEFINE_string('logdir', 'cnn_logdir_01_256_fashion_1024', 'logs directory')
-flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
+flags.DEFINE_string('logdir', 'cnn_logdir_01_256_fashion_1024_nodropout', 'logs directory')
+flags.DEFINE_string('mode', 'dbn', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 flags.DEFINE_string('data', 'fashion-mnist', 'data set...')
 
 cfg = tf.app.flags.FLAGS
@@ -51,7 +51,7 @@ def train():
 
     layer = tf.layers.flatten(layer)
     layer = tf.layers.dense(layer, 1024, activation=tf.nn.relu)
-    layer = tf.nn.dropout(layer, 0.5)
+    # layer = tf.nn.dropout(layer, 0.5)
     logits = tf.layers.dense(layer, 10, activation=None)
     outputs = tf.nn.softmax(logits)
     summary.append(tf.summary.histogram('outputs', outputs))

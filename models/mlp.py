@@ -22,8 +22,8 @@ flags.DEFINE_float('lr', 0.1, 'learning rate')
 #   environment setting    #
 ############################
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
-flags.DEFINE_string('logdir', 'logdir_01_1024_fashion', 'logs directory')
-flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
+flags.DEFINE_string('logdir', 'logdir_01_1024_fashion__', 'logs directory')
+flags.DEFINE_string('mode', 'bn', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 flags.DEFINE_string('data', 'fashion-mnist', 'data set...')
 
 cfg = tf.app.flags.FLAGS
