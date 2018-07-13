@@ -3,12 +3,15 @@ import tensorflow as tf
 import numpy as np
 
 
-def load_mnist(batch_size, is_training=True):
+def load_mnist(batch_size, is_training=True, spatial=False):
     path = os.path.join('data', 'mnist')
     if is_training:
         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        trainX = loaded[16:].reshape((60000, 784)).astype(np.float32)
+        if spatial:
+            trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32)
+        else:
+            trainX = loaded[16:].reshape((60000, 784)).astype(np.float32)
 
         fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -26,7 +29,10 @@ def load_mnist(batch_size, is_training=True):
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        teX = loaded[16:].reshape((10000, 784)).astype(np.float)
+        if spatial:
+            teX = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float32)
+        else:
+            teX = loaded[16:].reshape((10000, 784)).astype(np.float)
 
         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -36,12 +42,15 @@ def load_mnist(batch_size, is_training=True):
         return teX / 255., teY, num_te_batch
 
 
-def load_fashion_mnist(batch_size, is_training=True):
+def load_fashion_mnist(batch_size, is_training=True, spatial=False):
     path = os.path.join('data', 'fashion-mnist')
     if is_training:
         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        trainX = loaded[16:].reshape((60000, 784)).astype(np.float32)
+        if spatial:
+            trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32)
+        else:
+            trainX = loaded[16:].reshape((60000, 784)).astype(np.float32)
 
         fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -59,7 +68,10 @@ def load_fashion_mnist(batch_size, is_training=True):
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        teX = loaded[16:].reshape((10000, 784)).astype(np.float)
+        if spatial:
+            teX = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float32)
+        else:
+            teX = loaded[16:].reshape((10000, 784)).astype(np.float)
 
         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -69,17 +81,17 @@ def load_fashion_mnist(batch_size, is_training=True):
         return teX / 255., teY, num_te_batch
 
 
-def load_data(dataset, batch_size, is_training=True, one_hot=False):
+def load_data(dataset, batch_size, is_training=True, spatial=False):
     if dataset == 'mnist':
-        return load_mnist(batch_size, is_training)
+        return load_mnist(batch_size, is_training, spatial)
     elif dataset == 'fashion-mnist':
-        return load_fashion_mnist(batch_size, is_training)
+        return load_fashion_mnist(batch_size, is_training, spatial)
     else:
         raise Exception('Invalid dataset, please check the name of dataset:', dataset)
 
 
-def create_train_set(dataset, handle, batch_size=128, n_repeat=-1):
-    tr_x, tr_y, val_x, val_y, num_label, num_batch = load_data(dataset, batch_size, is_training=True)
+def create_train_set(dataset, handle, spatial=False, batch_size=128, n_repeat=-1):
+    tr_x, tr_y, val_x, val_y, num_label, num_batch = load_data(dataset, batch_size, is_training=True, spatial=spatial)
 
     tr_data_set = tf.data.Dataset.from_tensor_slices((tr_x, tr_y)).repeat(n_repeat).batch(batch_size)
     val_data_set = tf.data.Dataset.from_tensor_slices((val_x, val_y)).repeat(n_repeat).batch(batch_size)
