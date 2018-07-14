@@ -11,7 +11,9 @@ This implementation is based on papers:
 <b>Decorrelated Batch Normalization</b> (https://arxiv.org/abs/1804.08450) 
 from Lei Huang, Dawei Yang, Bo Lang, Jia Deng.
 
+recent result on cnn:
 
+<img src="result/cnn.jpg"></img>
 
 
 
