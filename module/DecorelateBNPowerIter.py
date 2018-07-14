@@ -82,11 +82,11 @@ class DecorelateBNPowerIter:
         trace = tf.trace(sigma)
         sigma_norm = sigma / trace
 
-        set_X = []
+        # set_X = []
         X = tf.eye(nFeature)
         for i in range(self.nIter):
             X = (3 * X - X * X * X * sigma_norm) / 2
-            set_X.append(X)
+            # set_X.append(X)
 
         whitten_matrix = X / tf.sqrt(trace)
 
@@ -96,7 +96,7 @@ class DecorelateBNPowerIter:
         self.centereds.append(centered)
         self.sigmas.append(sigma)
         self.whiten_matrixs.append(whitten_matrix)
-        self.set_Xs.append(set_X)
+        # self.set_Xs.append(set_X)
         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_means)
         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_projections)
         return tf.matmul(tf.squeeze(centered), whitten_matrix)
