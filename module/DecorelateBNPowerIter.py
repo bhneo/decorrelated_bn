@@ -77,18 +77,11 @@ class DecorelateBNPowerIter:
 
         sigma = tf.matmul(centered, tf.matrix_transpose(centered))
         sigma = tf.reduce_mean(sigma, 0)
-        # self.summaries.append(tf.summary.histogram('group{}_sigma'.format(groupId), sigma))
 
-        trace = tf.trace(sigma)
-        sigma_norm = sigma / trace
 
-        # set_X = []
-        X = tf.eye(nFeature)
-        for i in range(self.nIter):
-            X = (3 * X - X * X * X * sigma_norm) / 2
-            # set_X.append(X)
-
-        whitten_matrix = X / tf.sqrt(trace)
+        # whitten_matrix = X / tf.sqrt(trace)
+        # remove temply
+        whitten_matrix =None
 
         update_projections = tf.assign(self.running_projections[groupId],
                                  self.running_projections[groupId] * (1 - self.momentum) + whitten_matrix * self.momentum)
