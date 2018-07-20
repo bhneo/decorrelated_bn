@@ -7,9 +7,9 @@ import numpy as np
 import tensorflow as tf
 
 
-def buildDBN(inputs, train):
+def buildDBN(inputs, train, affine=True):
     input_shape = inputs.get_shape().as_list()
-    DBN = DecorelateBNPowerIter(input_shape)
+    DBN = DecorelateBNPowerIter(input_shape, affine=affine)
     return DBN.updateOutput(inputs, train)
 
 
@@ -61,8 +61,8 @@ class DecorelateBNPowerIter:
                 self.running_projections.append(tf.Variable(tf.eye(self.nDim-(groups-1)*self.m_perGroup), trainable=False))
 
         if self.affine:
-            self.weight = tf.Variable(tf.truncated_normal([self.nDim, 1]))
-            self.bias = tf.Variable(tf.zeros([self.nDim, 1]))
+            self.weight = tf.Variable(tf.ones([self.nDim, ]))
+            self.bias = tf.Variable(tf.zeros([self.nDim, ]))
             self.flag_inner_lr = False
             self.scale = 1
 

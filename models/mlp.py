@@ -16,14 +16,14 @@ flags.DEFINE_integer('steps', 10000, 'steps')
 flags.DEFINE_integer('save_summaries_steps', 10, 'the frequency of saving train summary(step)')
 flags.DEFINE_integer('save_checkpoint_steps', 200, 'the frequency of saving model')
 flags.DEFINE_list('layers', [100, 100, 100, 100], 'mlp layers')
-flags.DEFINE_float('lr', 0.1, 'learning rate')
+flags.DEFINE_float('lr', 1, 'learning rate')
 
 ############################
 #   environment setting    #
 ############################
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
-flags.DEFINE_string('logdir', 'logdir_01_1024_fashion__', 'logs directory')
-flags.DEFINE_string('mode', 'dbn', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
+flags.DEFINE_string('logdir', 'logdir_1_1024_fashion_affine', 'logs directory')
+flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 flags.DEFINE_string('data', 'fashion-mnist', 'data set...')
 
 cfg = tf.app.flags.FLAGS
