@@ -48,6 +48,7 @@ class DecorelateBNPowerIter:
         self.set_Xs = []
         self.centereds = []
         self.whiten_matrixs = []
+        self.eps = 1e-5
 
         groups = int(np.floor((self.nDim - 1) / self.m_perGroup) + 1)
         # allow nDim % m_perGroup != 0
@@ -78,10 +79,13 @@ class DecorelateBNPowerIter:
         sigma = tf.matmul(centered, tf.matrix_transpose(centered))
         sigma = tf.reduce_mean(sigma, 0)
 
+        eig, rotation, _ = tf.svd(sigma)
+        eig += self.eps
+        eig = tf.pow(eig, -1/2)
+        eig = tf.diag(eig)
 
-        # whitten_matrix = X / tf.sqrt(trace)
-        # remove temply
-        whitten_matrix =None
+        whitten_matrix =tf.matmul(rotation, eig)
+        whitten_matrix = tf.matmul(whitten_matrix, tf.transpose(rotation))
 
         update_projections = tf.assign(self.running_projections[groupId],
                                  self.running_projections[groupId] * (1 - self.momentum) + whitten_matrix * self.momentum)
