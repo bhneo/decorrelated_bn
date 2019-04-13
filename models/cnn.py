@@ -24,7 +24,7 @@ flags.DEFINE_float('lr', 0.1, 'learning rate')
 ############################
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
 flags.DEFINE_string('logdir', 'cnn_logdir_01_256_fashion_1024_nodropout', 'logs directory')
-flags.DEFINE_string('mode', 'dbn', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
+flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 flags.DEFINE_string('data', 'fashion-mnist', 'data set...')
 
 cfg = tf.app.flags.FLAGS
@@ -50,8 +50,14 @@ def train():
         summary.append(tf.summary.histogram('layer{}'.format(i), layer))
 
     layer = tf.layers.flatten(layer)
-    layer = tf.layers.dense(layer, 1024, activation=tf.nn.relu)
-    # layer = tf.nn.dropout(layer, 0.5)
+    layer = tf.layers.dense(layer, 1024, activation=None)
+    if cfg.mode == 'plain':
+        pass
+    elif cfg.mode == 'bn':
+        layer = tf.layers.batch_normalization(layer, training=is_training)
+    elif cfg.mode == 'dbn':
+        layer = dbn.buildDBN(layer, is_training)
+    layer = tf.nn.relu(layer)
     logits = tf.layers.dense(layer, 10, activation=None)
     outputs = tf.nn.softmax(logits)
     summary.append(tf.summary.histogram('outputs', outputs))
