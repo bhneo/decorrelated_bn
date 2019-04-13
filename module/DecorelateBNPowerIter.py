@@ -7,9 +7,9 @@ import numpy as np
 import tensorflow as tf
 
 
-def buildDBN(inputs, train):
+def buildDBN(inputs, train, affine=True):
     input_shape = inputs.get_shape().as_list()
-    DBN = DecorelateBNPowerIter(input_shape)
+    DBN = DecorelateBNPowerIter(input_shape, affine=affine)
     return DBN.updateOutput(inputs, train)
 
 
@@ -48,6 +48,7 @@ class DecorelateBNPowerIter:
         self.set_Xs = []
         self.centereds = []
         self.whiten_matrixs = []
+        self.eps = 1e-5
 
         groups = int(np.floor((self.nDim - 1) / self.m_perGroup) + 1)
         # allow nDim % m_perGroup != 0
@@ -60,8 +61,8 @@ class DecorelateBNPowerIter:
                 self.running_projections.append(tf.Variable(tf.eye(self.nDim-(groups-1)*self.m_perGroup), trainable=False))
 
         if self.affine:
-            self.weight = tf.Variable(tf.truncated_normal([self.nDim, 1]))
-            self.bias = tf.Variable(tf.zeros([self.nDim, 1]))
+            self.weight = tf.Variable(tf.ones([self.nDim, ]))
+            self.bias = tf.Variable(tf.zeros([self.nDim, ]))
             self.flag_inner_lr = False
             self.scale = 1
 
@@ -77,18 +78,14 @@ class DecorelateBNPowerIter:
 
         sigma = tf.matmul(centered, tf.matrix_transpose(centered))
         sigma = tf.reduce_mean(sigma, 0)
-        # self.summaries.append(tf.summary.histogram('group{}_sigma'.format(groupId), sigma))
 
-        trace = tf.trace(sigma)
-        sigma_norm = sigma / trace
+        eig, rotation, _ = tf.svd(sigma)
+        eig += self.eps
+        eig = tf.pow(eig, -1/2)
+        eig = tf.diag(eig)
 
-        set_X = []
-        X = tf.eye(nFeature)
-        for i in range(self.nIter):
-            X = (3 * X - X * X * X * sigma_norm) / 2
-            set_X.append(X)
-
-        whitten_matrix = X / tf.sqrt(trace)
+        whitten_matrix =tf.matmul(rotation, eig)
+        whitten_matrix = tf.matmul(whitten_matrix, tf.transpose(rotation))
 
         update_projections = tf.assign(self.running_projections[groupId],
                                  self.running_projections[groupId] * (1 - self.momentum) + whitten_matrix * self.momentum)
@@ -96,7 +93,7 @@ class DecorelateBNPowerIter:
         self.centereds.append(centered)
         self.sigmas.append(sigma)
         self.whiten_matrixs.append(whitten_matrix)
-        self.set_Xs.append(set_X)
+        # self.set_Xs.append(set_X)
         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_means)
         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_projections)
         return tf.matmul(tf.squeeze(centered), whitten_matrix)
