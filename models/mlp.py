@@ -1,32 +1,8 @@
 import tensorflow as tf
 from tqdm import tqdm
-import module.DecorelateBNPowerIter as dbn
-from models import data_input
-
-
-flags = tf.app.flags
-
-
-############################
-#    hyper parameters      #
-############################
-
-flags.DEFINE_integer('batch_size', 1024, 'batch size')
-flags.DEFINE_integer('steps', 10000, 'steps')
-flags.DEFINE_integer('save_summaries_steps', 10, 'the frequency of saving train summary(step)')
-flags.DEFINE_integer('save_checkpoint_steps', 200, 'the frequency of saving model')
-flags.DEFINE_list('layers', [100, 100, 100, 100], 'mlp layers')
-flags.DEFINE_float('lr', 1, 'learning rate')
-
-############################
-#   environment setting    #
-############################
-flags.DEFINE_boolean('is_training', True, 'train or predict phase')
-flags.DEFINE_string('logdir', 'logdir_1_1024_fashion_affine', 'logs directory')
-flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
-flags.DEFINE_string('data', 'fashion-mnist', 'data set...')
-
-cfg = tf.app.flags.FLAGS
+from layers import DecorrelatedBN, DecorrelatedBNPowerIter
+from config import cfg
+import data_input
 
 
 def train():

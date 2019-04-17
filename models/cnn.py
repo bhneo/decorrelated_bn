@@ -1,10 +1,8 @@
 import tensorflow as tf
 from tqdm import tqdm
-import module.DecorelateBNPowerIter as dbn
-from models import data_input
+import data_input
 
-
-flags = tf.app.flags
+flags = tf.flags
 
 
 ############################
@@ -27,8 +25,7 @@ flags.DEFINE_string('logdir', 'cnn_logdir_01_64_5_256_fashion_1024', 'logs direc
 flags.DEFINE_string('mode', 'dbn', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 flags.DEFINE_string('data', 'fashion-mnist', 'data set...')
 
-cfg = tf.app.flags.FLAGS
-
+cfg = tf.flags.FLAGS
 
 def train():
     handle = tf.placeholder(tf.string, [])
