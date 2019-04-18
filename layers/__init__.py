@@ -1,1 +1,1 @@
-from layers.normalization import DecorrelatedBN, DecorrelatedBNPowerIter
+from layers.normalization import DecorrelatedBN, IterativeNormalization

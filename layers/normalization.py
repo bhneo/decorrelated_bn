@@ -98,10 +98,10 @@ class DecorrelatedBN(Layer):
             mean_name = 'moving_mean{}'.format(i)
             projection_name = 'moving_variance{}'.format(i)
             if i < self.groups - 1:
-                mean_shape = [self.m_per_group,]
+                mean_shape = [1, self.m_per_group]
                 projection_shape = [self.m_per_group, self.m_per_group]
             else:
-                mean_shape = [dim - (self.groups - 1) * self.m_per_group,]
+                mean_shape = [1, dim - (self.groups - 1) * self.m_per_group]
                 projection_shape = [dim - (self.groups - 1) * self.m_per_group, dim - (self.groups - 1) * self.m_per_group]
 
             moving_mean = self.add_weight(
@@ -125,9 +125,11 @@ class DecorrelatedBN(Layer):
             self.moving_projections.append(moving_projection)
 
         if self.affine:
+            param_shape = [axis_to_dim[i] if i in axis_to_dim
+                           else 1 for i in range(ndims)]
             self.gamma = self.add_weight(
                 name='gamma',
-                shape=[dim, 1],
+                shape=param_shape,
                 dtype=param_dtype,
                 initializer=self.gamma_initializer,
                 regularizer=self.gamma_regularizer,
@@ -135,7 +137,7 @@ class DecorrelatedBN(Layer):
                 trainable=True)
             self.beta = self.add_weight(
                 name='beta',
-                shape=[dim, 1],
+                shape=param_shape,
                 dtype=param_dtype,
                 initializer=self.beta_initializer,
                 regularizer=self.beta_regularizer,
@@ -160,6 +162,7 @@ class DecorrelatedBN(Layer):
         trans = reduction_axes+[self.axis]
         trans_recover = [i for i in range(self.axis)] + [ndims-1] + [j for j in range(self.axis, ndims-1)]
         inputs = array_ops.transpose(inputs, perm=trans)
+        transposed_shape = [-1] + inputs.get_shape().as_list()[1:]
         inputs = array_ops.reshape(inputs, shape=[-1, input_shape.dims[self.axis].value])
 
         # Determine a boolean value for `training`: could be True, False, or None.
@@ -167,16 +170,21 @@ class DecorrelatedBN(Layer):
         outputs = []
         for i in range(self.groups):
             start_index = i * self.m_per_group
-            end_index = np.min(((i + 1) * self.m_per_group, ndims))
+            end_index = np.min(((i + 1) * self.m_per_group, input_shape.dims[self.axis].value))
             group_input = inputs[:, start_index:end_index]
 
             if training_value is not False:
                 mean = tf.reduce_mean(group_input, 0, keepdims=True)
                 centered = group_input - mean
 
-                sigma = tf.matmul(tf.matrix_transpose(centered), centered)
-                batch_size = group_input.get_shape().dims[0].value
-                sigma = tf.divide(sigma, batch_size)
+                centered_ = tf.expand_dims(centered, -1)
+
+                sigma = tf.matmul(centered_, tf.matrix_transpose(centered_))
+                sigma = tf.reduce_mean(sigma, 0)
+
+                # sigma = tf.matmul(tf.matrix_transpose(centered), centered)
+                # batch_size = group_input.get_shape()
+                # sigma = tf.divide(sigma, batch_size)
                 projection = self.get_projection(sigma, group_input)
 
                 moving_mean = self.moving_means[i]
@@ -199,7 +207,7 @@ class DecorrelatedBN(Layer):
 
                 mean_update = tf_utils.smart_cond(
                     training,
-                    lambda: _do_update(self.moving_mean[i], new_mean),
+                    lambda: _do_update(self.moving_means[i], new_mean),
                     lambda: self.moving_means[i])
                 projection_update = tf_utils.smart_cond(
                     training,
@@ -220,7 +228,7 @@ class DecorrelatedBN(Layer):
             outputs.append(output)
 
         outputs = tf.concat(outputs, 1)
-        outputs = tf.reshape(outputs, shape=trans)
+        outputs = tf.reshape(outputs, shape=transposed_shape)
         outputs = tf.transpose(outputs, perm=trans_recover)
 
         # Broadcasting only necessary for single-axis batch norm where the axis is
@@ -246,7 +254,7 @@ class DecorrelatedBN(Layer):
 
     def get_projection(self, sigma, inputs):
         eig, rotation, _ = tf.svd(sigma)
-        eig += self.eps
+        eig += self.epsilon
         eig = tf.pow(eig, -1 / 2)
         eig = tf.diag(eig)
 
@@ -300,7 +308,7 @@ class DecorrelatedBN(Layer):
         return tf.matmul(tf.squeeze(centered), whitten_matrix)
 
 
-class DecorrelatedBNPowerIter(DecorrelatedBN):
+class IterativeNormalization(DecorrelatedBN):
     def __init__(self,
                  axis=-1,
                  momentum=0.99,
@@ -320,20 +328,20 @@ class DecorrelatedBNPowerIter(DecorrelatedBN):
                  name=None,
                  **kwargs):
 
-        super(DecorrelatedBNPowerIter, self).__init__(axis,
-                                                      momentum,
-                                                      epsilon,m_per_group,
-                                                      affine,
-                                                      beta_initializer,
-                                                      gamma_initializer,
-                                                      moving_mean_initializer,
-                                                      moving_projection_initializer,
-                                                      beta_regularizer,
-                                                      gamma_regularizer,
-                                                      beta_constraint,
-                                                      gamma_constraint,
-                                                      trainable,name,
-                                                      **kwargs)
+        super(IterativeNormalization, self).__init__(axis,
+                                                     momentum,
+                                                     epsilon, m_per_group,
+                                                     affine,
+                                                     beta_initializer,
+                                                     gamma_initializer,
+                                                     moving_mean_initializer,
+                                                     moving_projection_initializer,
+                                                     beta_regularizer,
+                                                     gamma_regularizer,
+                                                     beta_constraint,
+                                                     gamma_constraint,
+                                                     trainable, name,
+                                                     **kwargs)
         self.iter_num = iter_num
 
     def get_projection(self, sigma, inputs):

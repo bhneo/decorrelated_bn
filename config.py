@@ -16,10 +16,10 @@ flags.DEFINE_string('activation', 'relu', 'activation used in hidden layers')
 ############################
 #   environment setting    #
 ############################
-flags.DEFINE_string('logdir', 'logdir_1_1024_fashion_affine', 'logs directory')
+flags.DEFINE_string('result', 'result', 'logs directory')
 flags.DEFINE_string('mode', 'plain', 'plain:nothing inserted, bn: batch normalization in tf, dbn: decorrelated batch normalization')
 flags.DEFINE_string('dataset', 'fashion-mnist', 'data set...')
-flags.DEFINE_string('strategy', 'debug', '')
+flags.DEFINE_string('strategy', 'vggA_base', '')
 flags.DEFINE_boolean('augment', False, 'do data augment or not')
 flags.DEFINE_string('data_set_path', 'data/imagenet/', 'dataset path in which dataset saved')
 

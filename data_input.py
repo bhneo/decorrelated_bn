@@ -47,10 +47,13 @@ def get_input(dataset):
             return tf.image.per_image_standardization(image), label
 
         train_set = tf.data.Dataset.from_tensor_slices((train_images, train_labels))\
-            .map(parse_train, num_parallel_calls=tf.data.experimental.AUTOTUNE).batch(cfg.batch_size)
+            .map(parse_train, num_parallel_calls=tf.data.experimental.AUTOTUNE).repeat().batch(cfg.batch_size)
         test_set = tf.data.Dataset.from_tensor_slices((test_images, test_labels))\
-            .map(parse_test, num_parallel_calls=tf.data.experimental.AUTOTUNE).batch(cfg.batch_size)
+            .map(parse_test, num_parallel_calls=tf.data.experimental.AUTOTUNE).repeat().batch(cfg.batch_size)
         steps_per_epoch = train_images.shape[0]//cfg.batch_size
+        validation_steps = test_images.shape[0]//cfg.batch_size
+        if validation_steps == 0:
+            validation_steps = 1
     elif dataset == 'imagenet':
         def parse_tfrecords(example_proto):
             features = {"image": tf.FixedLenFeature([], tf.string, default_value=""),
@@ -105,10 +108,11 @@ def get_input(dataset):
             .batch(cfg.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
 
         steps_per_epoch = 1281167 // cfg.batch_size
+        validation_steps = 50000 // cfg.batch_size
     else:
         raise ValueError('Dataset not supported yet:', dataset)
 
-    return train_set, test_set, steps_per_epoch
+    return train_set, test_set, steps_per_epoch, validation_steps
 
 
 if __name__ == "__main__":
