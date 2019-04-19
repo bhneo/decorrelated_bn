@@ -17,7 +17,7 @@ def train(dataset, model, optimizer, tensorboard=False, learning_rate_scheduler=
 
     model.compile(optimizer=optimizer,
                   loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
+                  metrics=['sparse_categorical_accuracy'])
 
     model.summary()
 
@@ -66,7 +66,7 @@ def get_optimizer(method, lr, momentum=0.9):
 
 def main(_):
     if cfg.strategy == 'debug':
-        methods = ['dbn', 'iter_norm', 'bn']
+        methods = ['bn', 'iter_norm', 'bn']
         lrs = [0.1, 0.5, 1, 5]
         layer_models = [[100, 100, 100], [100]]
         cfg.epochs = 3
@@ -121,8 +121,8 @@ def main(_):
 
     elif cfg.strategy == 'vggA_base':
         methods = ['dbn', 'iter_norm', 'bn']
-        lr = 1
-        cfg.epochs = 3
+        lr = 0.1
+        cfg.epochs = 50
         cfg.batch_size = 256
         cfg.augment = True
         if os.path.exists(cfg.result + '/vggA_base.csv'):
@@ -144,11 +144,11 @@ def main(_):
                     return lr * decay_rate
                 return lr
 
-            model = get_model('vggA', method=method, filters=4, weight_decay=0.0005, input_height=28,
-                              input_width=28, input_depth=1, m_per_group=0, affine=True)
+            model = get_model('vggA', method=method, filters=64, weight_decay=0.0005, input_height=32,
+                              input_width=32, input_depth=3, m_per_group=16, affine=True)
             plot_name = '_'.join([method, str(lr)])
             # history = train('fashion_mnist', model, optimizer, learning_rate_scheduler=LearningRateScheduler(lr_scheduler))
-            history = train('fashion_mnist', model, tf.train.MomentumOptimizer(lr, momentum=0.9))
+            history = train('cifar10', model, tf.train.AdamOptimizer(lr))
             # history = train('fashion_mnist', model, tf.keras.optimizers.SGD(lr, momentum=0.9))
             df[plot_name + '_acc'] = history.history['acc']
             df[plot_name + '_val_acc'] = history.history['val_acc']

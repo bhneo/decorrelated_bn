@@ -45,11 +45,12 @@ def build_vgg(method, filters, repeats, out_num, weight_decay, height=32, width=
                 x = IterativeNormalization(m_per_group=m_per_group, affine=dbn_affine)(x)
             x = layers.ReLU()(x)
 
-        x = layers.MaxPool2D(padding='same')(x)
-
-        filters *= 2
+        x = layers.MaxPooling2D(pool_size=2, strides=2, padding='same')(x)
+        if filters < 512:
+            filters *= 2
 
     x = layers.Flatten()(x)
+    x = layers.Dropout(0.5)(x)
     x = layers.Dense(512, kernel_regularizer=regularizer)(x)
     x = layers.BatchNormalization()(x)
     x = layers.ReLU()(x)
