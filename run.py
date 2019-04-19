@@ -111,17 +111,17 @@ def main(_):
 
                 plt.figure(num='fig_acc')
                 plt.legend(legends, loc = 'upper left')
-                plt.savefig(cfg.result + '/acc_' + '-'.join([str(i) for i in layer_model]) + '_' + str(lr) + '.jpg')
+                plt.savefig(cfg.result + '/acc_' + '-'.join([str(i) for i in layer_model]) + '_' + str(lr) + '.png')
                 plt.close(fig=fig_acc)
                 plt.figure(num='fig_loss')
                 plt.legend(legends, loc = 'upper left')
-                plt.savefig(cfg.result + '/loss_' + '-'.join([str(i) for i in layer_model]) + '_' + str(lr) + '.jpg')
+                plt.savefig(cfg.result + '/loss_' + '-'.join([str(i) for i in layer_model]) + '_' + str(lr) + '.png')
                 plt.close(fig=fig_loss)
         df.to_csv(cfg.result + '/debug.csv')
 
     elif cfg.strategy == 'vggA_base':
         methods = ['dbn', 'iter_norm', 'bn']
-        lr = 4
+        lr = 1
         cfg.epochs = 3
         cfg.batch_size = 256
         cfg.augment = True
@@ -144,10 +144,12 @@ def main(_):
                     return lr * decay_rate
                 return lr
 
-            model = get_model('vggA', method=method, filters=4, weight_decay=0.0005, input_height=32,
-                              input_width=32, input_depth=3, m_per_group=16, affine=True)
+            model = get_model('vggA', method=method, filters=4, weight_decay=0.0005, input_height=28,
+                              input_width=28, input_depth=1, m_per_group=0, affine=True)
             plot_name = '_'.join([method, str(lr)])
-            history = train('cifar10', model, optimizer, learning_rate_scheduler=LearningRateScheduler(lr_scheduler))
+            # history = train('fashion_mnist', model, optimizer, learning_rate_scheduler=LearningRateScheduler(lr_scheduler))
+            history = train('fashion_mnist', model, tf.train.MomentumOptimizer(lr, momentum=0.9))
+            # history = train('fashion_mnist', model, tf.keras.optimizers.SGD(lr, momentum=0.9))
             df[plot_name + '_acc'] = history.history['acc']
             df[plot_name + '_val_acc'] = history.history['val_acc']
             plt.figure(num='fig_acc')
@@ -169,19 +171,20 @@ def main(_):
 
         plt.figure(num='fig_acc')
         plt.legend(legends, loc='upper left')
-        plt.savefig(cfg.result + '/vggA_base_acc_' + str(lr) + '.jpg')
+        plt.savefig(cfg.result + '/vggA_base_acc_' + str(lr) + '.png')
         plt.close(fig=fig_acc)
         plt.figure(num='fig_loss')
         plt.legend(legends, loc='upper left')
-        plt.savefig(cfg.result + '/vggA_base_loss_' + str(lr) + '.jpg')
+        plt.savefig(cfg.result + '/vggA_base_loss_' + str(lr) + '.png')
         plt.close(fig=fig_loss)
         df.to_csv(cfg.result + '/vggA_base.csv')
 
 
 if __name__ == "__main__":
-    config = tf.ConfigProto()
-    config.gpu_options.allocator_type = 'BFC'  # A "Best-fit with coalescing" algorithm, simplified from a version of dlmalloc.
-    config.gpu_options.per_process_gpu_memory_fraction = 0.3
-    config.gpu_options.allow_growth = True
-    set_session(tf.Session(config=config))
+    # config = tf.ConfigProto()
+    # config.gpu_options.allocator_type = 'BFC'  # A "Best-fit with coalescing" algorithm, simplified from a version of dlmalloc.
+    # config.gpu_options.per_process_gpu_memory_fraction = 0.3
+    # config.gpu_options.allow_growth = True
+    # set_session(tf.Session(config=config))
+    set_session(tf.Session())
     tf.app.run()

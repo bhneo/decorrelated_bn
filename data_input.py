@@ -33,14 +33,14 @@ def load_data_on_memory(dataset):
 def get_input(dataset):
     if dataset in ['mnist', 'fashion_mnist', 'cifar10', 'cifar100']:
         train_images, train_labels, test_images, test_labels = load_data_on_memory(dataset)
-        image_height, image_width = train_images.shape[1], train_images.shape[2]
+        image_height, image_width, image_depth = train_images.shape[1], train_images.shape[2], train_images.shape[3]
 
         def parse_train(image, label):
             image = tf.image.per_image_standardization(image)
             if cfg.augment:
                 image = tf.image.random_flip_left_right(image)
                 image = tf.image.resize_image_with_crop_or_pad(image, image_height + 8, image_width + 8)
-                image = tf.random_crop(image, [image_height, image_width, 3])
+                image = tf.random_crop(image, [image_height, image_width, image_depth])
             return image, label
 
         def parse_test(image, label):
