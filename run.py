@@ -12,12 +12,12 @@ from tensorflow.python.keras.backend import set_session
 from tensorflow.python.keras.backend import clear_session
 
 
-def train(dataset, model, optimizer, tensorboard=False, learning_rate_scheduler=None):
+def train(dataset, model, optimizer, tensorboard=False, learning_rate_scheduler=None, debug=False):
     train_set, test_set, steps_per_epoch, validation_steps = data_input.get_input(dataset)
 
     model.compile(optimizer=optimizer,
                   loss='sparse_categorical_crossentropy',
-                  metrics=['sparse_categorical_accuracy'])
+                  metrics=['acc'])
 
     model.summary()
 
@@ -27,7 +27,7 @@ def train(dataset, model, optimizer, tensorboard=False, learning_rate_scheduler=
                                      histogram_freq=1,
                                      write_graph=True,
                                      write_grads=True,
-                                     write_images=True,
+                                     write_images=False,
                                      embeddings_freq=0,
                                      embeddings_layer_names=None,
                                      embeddings_metadata=None))
@@ -66,7 +66,7 @@ def get_optimizer(method, lr, momentum=0.9):
 
 def main(_):
     if cfg.strategy == 'debug':
-        methods = ['bn', 'iter_norm', 'bn']
+        methods = ['dbn', 'iter_norm', 'bn']
         lrs = [0.1, 0.5, 1, 5]
         layer_models = [[100, 100, 100], [100]]
         cfg.epochs = 3
@@ -120,9 +120,10 @@ def main(_):
         df.to_csv(cfg.result + '/debug.csv')
 
     elif cfg.strategy == 'vggA_base':
-        methods = ['dbn', 'iter_norm', 'bn']
-        lr = 0.1
-        cfg.epochs = 50
+        # methods = ['iter_norm', 'bn', 'dbn']
+        methods = ['iter_norm', 'bn']
+        lr = 1
+        cfg.epochs = 80
         cfg.batch_size = 256
         cfg.augment = True
         if os.path.exists(cfg.result + '/vggA_base.csv'):
@@ -147,8 +148,8 @@ def main(_):
             model = get_model('vggA', method=method, filters=64, weight_decay=0.0005, input_height=32,
                               input_width=32, input_depth=3, m_per_group=16, affine=True)
             plot_name = '_'.join([method, str(lr)])
-            # history = train('fashion_mnist', model, optimizer, learning_rate_scheduler=LearningRateScheduler(lr_scheduler))
-            history = train('cifar10', model, tf.train.AdamOptimizer(lr))
+            history = train('cifar10', model, optimizer, learning_rate_scheduler=LearningRateScheduler(lr_scheduler))
+            # history = train('cifar10', model, optimizer)
             # history = train('fashion_mnist', model, tf.keras.optimizers.SGD(lr, momentum=0.9))
             df[plot_name + '_acc'] = history.history['acc']
             df[plot_name + '_val_acc'] = history.history['val_acc']
@@ -181,10 +182,5 @@ def main(_):
 
 
 if __name__ == "__main__":
-    # config = tf.ConfigProto()
-    # config.gpu_options.allocator_type = 'BFC'  # A "Best-fit with coalescing" algorithm, simplified from a version of dlmalloc.
-    # config.gpu_options.per_process_gpu_memory_fraction = 0.3
-    # config.gpu_options.allow_growth = True
-    # set_session(tf.Session(config=config))
     set_session(tf.Session())
     tf.app.run()

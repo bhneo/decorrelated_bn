@@ -7,9 +7,9 @@ import numpy as np
 import tensorflow as tf
 
 
-def buildDBN(inputs, train):
+def buildDBN(inputs, train, per_group):
     input_shape = inputs.get_shape().as_list()
-    DBN = DecorelateBNPowerIter(input_shape)
+    DBN = DecorelateBNPowerIter(input_shape, m_perGroup=per_group)
     return DBN.updateOutput(inputs, train)
 
 
@@ -48,6 +48,7 @@ class DecorelateBNPowerIter:
         self.set_Xs = []
         self.centereds = []
         self.whiten_matrixs = []
+        self.eps = 1e-5
 
         groups = int(np.floor((self.nDim - 1) / self.m_perGroup) + 1)
         # allow nDim % m_perGroup != 0
@@ -79,16 +80,24 @@ class DecorelateBNPowerIter:
         sigma = tf.reduce_mean(sigma, 0)
         # self.summaries.append(tf.summary.histogram('group{}_sigma'.format(groupId), sigma))
 
-        trace = tf.trace(sigma)
-        sigma_norm = sigma / trace
+        # trace = tf.trace(sigma)
+        # sigma_norm = sigma / trace
+        #
+        # set_X = []
+        # X = tf.eye(nFeature)
+        # for i in range(self.nIter):
+        #     X = (3 * X - X * X * X * sigma_norm) / 2
+        #     set_X.append(X)
+        #
+        # whitten_matrix = X / tf.sqrt(trace)
 
-        set_X = []
-        X = tf.eye(nFeature)
-        for i in range(self.nIter):
-            X = (3 * X - X * X * X * sigma_norm) / 2
-            set_X.append(X)
+        eig, rotation, _ = tf.svd(sigma)
+        eig += self.eps
+        eig = tf.pow(eig, -1 / 2)
+        eig = tf.diag(eig)
 
-        whitten_matrix = X / tf.sqrt(trace)
+        whitten_matrix = tf.matmul(rotation, eig)
+        whitten_matrix = tf.matmul(whitten_matrix, tf.transpose(rotation))
 
         update_projections = tf.assign(self.running_projections[groupId],
                                  self.running_projections[groupId] * (1 - self.momentum) + whitten_matrix * self.momentum)
@@ -96,7 +105,7 @@ class DecorelateBNPowerIter:
         self.centereds.append(centered)
         self.sigmas.append(sigma)
         self.whiten_matrixs.append(whitten_matrix)
-        self.set_Xs.append(set_X)
+        # self.set_Xs.append(set_X)
         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_means)
         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_projections)
         return tf.matmul(tf.squeeze(centered), whitten_matrix)
@@ -125,7 +134,8 @@ class DecorelateBNPowerIter:
 
             def updateOutputOnTrain():
                 return self.updateOutput_perGroup_train(group_input, i)
-            output = tf.cond(train, updateOutputOnTrain, updateOutputOnEvaluate)
+            # output = tf.cond(train, updateOutputOnTrain, updateOutputOnEvaluate)
+            output = self.updateOutput_perGroup_train(group_input, i)
             outputs.append(output)
         self.output = tf.concat(outputs, 1)
 

@@ -1,6 +1,5 @@
 from tensorflow import keras
 from tensorflow.python.keras import layers
-from tensorflow.python.keras.layers import Layer
 from layers import DecorrelatedBN, IterativeNormalization
 from config import cfg
 

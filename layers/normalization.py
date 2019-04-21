@@ -6,6 +6,7 @@ import contextlib
 
 import numpy as np
 import tensorflow as tf
+from config import cfg
 from tensorflow.python import tf2
 from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
@@ -177,14 +178,13 @@ class DecorrelatedBN(Layer):
                 mean = tf.reduce_mean(group_input, 0, keepdims=True)
                 centered = group_input - mean
 
-                centered_ = tf.expand_dims(centered, -1)
+                # centered_ = tf.expand_dims(centered, -1)
+                #
+                # sigma = tf.matmul(centered_, tf.matrix_transpose(centered_))
+                # sigma = tf.reduce_mean(sigma, 0)
 
-                sigma = tf.matmul(centered_, tf.matrix_transpose(centered_))
-                sigma = tf.reduce_mean(sigma, 0)
-
-                # sigma = tf.matmul(tf.matrix_transpose(centered), centered)
-                # batch_size = group_input.get_shape()
-                # sigma = tf.divide(sigma, batch_size)
+                sigma = tf.matmul(tf.matrix_transpose(centered), centered)
+                sigma = sigma * 1 / cfg.batch_size
                 projection = self.get_projection(sigma, group_input)
 
                 moving_mean = self.moving_means[i]
@@ -297,7 +297,7 @@ class DecorrelatedBN(Layer):
         eig = tf.pow(eig, -1/2)
         eig = tf.diag(eig)
 
-        whitten_matrix =tf.matmul(rotation, eig)
+        whitten_matrix = tf.matmul(rotation, eig)
         whitten_matrix = tf.matmul(whitten_matrix, tf.transpose(rotation))
 
         update_projections = tf.assign(self.running_projections[groupId],
