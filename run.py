@@ -50,6 +50,8 @@ def get_model(model_type, method='dbn', layers=[100], filters=64, out_num=10, we
         model = model_builder.build_mlp(method, layers, out_num, weight_decay, height=input_height, width=input_width, depth=input_depth, m_per_group=m_per_group, dbn_affine=affine)
     elif model_type == 'vggA':
         model = model_builder.build_vgg(method, filters, [1,1,2,2,2], out_num, weight_decay, height=input_height, width=input_width, depth=input_depth, m_per_group=m_per_group, dbn_affine=affine)
+    elif model_type == 'vgg16':
+        model = model_builder.build_vgg16(method, filters, [2,2,4,4,4], out_num, weight_decay, height=input_height, width=input_width, depth=input_depth, m_per_group=m_per_group, dbn_affine=affine)
 
     return model
 
@@ -120,9 +122,9 @@ def main(_):
         df.to_csv(cfg.result + '/debug.csv')
 
     elif cfg.strategy == 'vggA_base':
-        # methods = ['iter_norm', 'bn', 'dbn']
-        methods = ['iter_norm', 'bn']
-        lr = 1
+        methods = ['dbn','iter_norm', 'bn']
+        # methods = ['iter_norm', 'bn']
+        lr = 0.1
         cfg.epochs = 80
         cfg.batch_size = 256
         cfg.augment = True
@@ -179,6 +181,64 @@ def main(_):
         plt.savefig(cfg.result + '/vggA_base_loss_' + str(lr) + '.png')
         plt.close(fig=fig_loss)
         df.to_csv(cfg.result + '/vggA_base.csv')
+
+    elif cfg.strategy == 'vgg16':
+        methods = ['iter_norm', 'bn']
+        lr = 0.1
+        cfg.epochs = 160
+        cfg.batch_size = 256
+        cfg.augment = True
+        if os.path.exists(cfg.result + '/{}.csv'.format(cfg.strategy)):
+            os.remove(cfg.result + '/{}.csv'.format(cfg.strategy))
+        df = pd.DataFrame()
+        fig_acc = plt.figure(num='fig_acc')
+        fig_loss = plt.figure(num='fig_loss')
+        legends = []
+        for method in methods:
+            clear_session()
+            print('method:{}'.format(method))
+            print('lr:{}'.format(lr))
+            optimizer = get_optimizer('sgd', lr, momentum=0.9)
+
+            def lr_scheduler(epoch, lr):
+                decay_rate = 0.2
+                if epoch:
+                    if epoch % 60 == 0 and epoch % 120:
+                        return lr * decay_rate
+                return lr
+
+            model = get_model('vgg16', method=method, filters=64, weight_decay=0, input_height=32,
+                              input_width=32, input_depth=3, m_per_group=0, affine=True)
+            plot_name = '_'.join([method, str(lr)])
+            history = train('cifar10', model, optimizer, learning_rate_scheduler=LearningRateScheduler(lr_scheduler))
+            df[plot_name + '_acc'] = history.history['acc']
+            df[plot_name + '_val_acc'] = history.history['val_acc']
+            plt.figure(num='fig_acc')
+            plt.plot(history.history['acc'])
+            plt.plot(history.history['val_acc'])
+            plt.title('model accuracy')
+            plt.ylabel('accuracy')
+            plt.xlabel('epoch')
+            df[plot_name + '_loss'] = history.history['loss']
+            df[plot_name + '_val_loss'] = history.history['val_loss']
+            plt.figure(num='fig_loss')
+            plt.plot(history.history['loss'])
+            plt.plot(history.history['val_loss'])
+            plt.title('model loss')
+            plt.ylabel('loss')
+            plt.xlabel('epoch')
+            plt.legend([method + '_train', method + '_test'], loc='upper left')
+            legends += [method + '_train', method + '_test']
+
+        plt.figure(num='fig_acc')
+        plt.legend(legends, loc='upper left')
+        plt.savefig(cfg.result + '/{}_acc_'.format(cfg.strategy) + str(lr) + '.png')
+        plt.close(fig=fig_acc)
+        plt.figure(num='fig_loss')
+        plt.legend(legends, loc='upper left')
+        plt.savefig(cfg.result + '/{}_loss_'.format(cfg.strategy) + str(lr) + '.png')
+        plt.close(fig=fig_loss)
+        df.to_csv(cfg.result + '/{}.csv'.format(cfg.strategy))
 
 
 if __name__ == "__main__":

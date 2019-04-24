@@ -59,3 +59,33 @@ def build_vgg(method, filters, repeats, out_num, weight_decay, height=32, width=
     return model
 
 
+def build_vgg16(method, filters, repeats, out_num, weight_decay, height=32, width=32, depth=3, m_per_group=16, dbn_affine=True):
+    regularizer = keras.regularizers.l2(weight_decay) if weight_decay != 0 else None
+    input_image = layers.Input(shape=(height, width, depth))
+    x = input_image
+    for i, repeat in enumerate(repeats):
+        for _ in range(repeat):
+            x = layers.Conv2D(filters=filters, kernel_size=3, padding='same',
+                              kernel_regularizer=regularizer)(x)
+            if method == 'bn':
+                x = layers.BatchNormalization()(x)
+            elif method == 'dbn':
+                x = DecorrelatedBN(m_per_group=m_per_group, affine=dbn_affine)(x)
+            elif method == 'iter_norm':
+                x = IterativeNormalization(m_per_group=m_per_group, affine=dbn_affine)(x)
+            x = layers.ReLU()(x)
+
+        if i == 4:
+            x = layers.AveragePooling2D(pool_size=2, strides=2, padding='same')(x)
+        else:
+            x = layers.MaxPooling2D(pool_size=2, strides=2, padding='same')(x)
+        if filters < 512:
+            filters *= 2
+
+    x = layers.Flatten()(x)
+    out = layers.Dense(out_num, activation='softmax', kernel_regularizer=regularizer)(x)
+
+    model = keras.Model(inputs=input_image, outputs=out)
+    return model
+
+
