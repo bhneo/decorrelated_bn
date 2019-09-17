@@ -246,11 +246,12 @@ class DecorrelatedBN(Layer):
         if offset is not None:
             offset = math_ops.cast(offset, inputs.dtype)
 
-        outputs = outputs * scale + offset
+        if self.affine:
+            outputs = outputs * scale + offset
 
         # If some components of the shape got lost due to adjustments, fix that.
         outputs.set_shape(input_shape)
-        return outputs
+        return outputs, projection
 
     def get_projection(self, sigma, inputs):
         eig, rotation, _ = tf.svd(sigma)
@@ -350,6 +351,8 @@ class IterativeNormalization(DecorrelatedBN):
         sigma_norm = sigma / trace
 
         projection = tf.eye(n_feature)
+        x1 = projection * projection
+        x2 = tf.matmul(projection, projection)
         for i in range(self.iter_num):
             projection = (3 * projection - projection * projection * projection * sigma_norm) / 2
 
@@ -357,3 +360,33 @@ class IterativeNormalization(DecorrelatedBN):
 
 
 
+if __name__ == "__main__":
+    tf.enable_eager_execution()
+    data = tf.random_normal(shape=[256, 16])
+    sigma = tf.matmul(tf.matrix_transpose(data), data)
+    s, u, v = tf.svd(sigma)
+    y,pro1 = IterativeNormalization(affine=False, iter_num=5)(data, True)
+    y_sigma = tf.matmul(tf.matrix_transpose(y), y)/256
+    s1, u1, v1 = tf.svd(y_sigma)
+
+    y2,pro2 = DecorrelatedBN(affine=False)(data, True)
+    y2_sigma = tf.matmul(tf.matrix_transpose(y2), y2)/256
+    s2, u2, v2 = tf.svd(y2_sigma)
+    print(s1)
+    print(s2)
+    print()
+    print(y_sigma)
+    print(y2_sigma)
+    print()
+    gap = pro1-pro2
+    print(gap)
+
+    import matplotlib.pyplot as mp, seaborn
+
+    seaborn.heatmap(gap, center=0, annot=True)
+    mp.show()
+    #
+    # seaborn.heatmap(y_sigma, center=0, annot=True)
+    # mp.show()
+    # seaborn.heatmap(y2_sigma, center=0, annot=True)
+    # mp.show()
