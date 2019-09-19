@@ -6,7 +6,7 @@ import contextlib
 
 import numpy as np
 import tensorflow as tf
-from config import cfg
+# from config import cfg
 from tensorflow.python import tf2
 from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
@@ -16,6 +16,7 @@ from tensorflow.python.keras import backend as K
 from tensorflow.python.keras import constraints
 from tensorflow.python.keras import initializers
 from tensorflow.python.keras import regularizers
+from tensorflow.python.keras.engine import base_layer_utils
 from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow.python.keras.layers import Layer
 from tensorflow.python.keras.utils import tf_utils
@@ -26,6 +27,8 @@ from tensorflow.python.ops import variables as tf_variables
 
 
 class DecorrelatedBN(Layer):
+    _USE_V2_BEHAVIOR = True
+
     def __init__(self,
                  axis=-1,
                  momentum=0.99,
@@ -66,9 +69,47 @@ class DecorrelatedBN(Layer):
         self.moving_means = []
         self.moving_projections = []
 
+        self._trainable_var = None
+
+    @property
+    def trainable(self):
+        return self._trainable
+
+    @trainable.setter
+    def trainable(self, value):
+        self._trainable = value
+        if self._trainable_var is not None:
+            self._trainable_var.update_value(value)
+
+    def _get_trainable_var(self):
+        if self._trainable_var is None:
+            self._trainable_var = K.freezable_variable(
+                self._trainable, name=self.name + '_trainable')
+        return self._trainable_var
+
+    def _get_training_value(self, training=None):
+        if training is None:
+            training = K.learning_phase()
+        if self._USE_V2_BEHAVIOR:
+            if isinstance(training, int):
+                training = bool(training)
+            if base_layer_utils.is_in_keras_graph():
+                training = math_ops.logical_and(training, self._get_trainable_var())
+            else:
+                training = math_ops.logical_and(training, self.trainable)
+        return training
+
+    @property
+    def _param_dtype(self):
+        # Raise parameters of fp16 batch norm to fp32
+        if self.dtype == dtypes.float16 or self.dtype == dtypes.bfloat16:
+            return dtypes.float32
+        else:
+            return self.dtype or dtypes.float32
+
     def build(self, input_shape):
-        assert (len(input_shape) != 2 or len(input_shape) != 4), \
-            'only 4D or 2D tensor supported, got {}D tensor instead'.format(len(input_shape))
+        # assert (len(input_shape) != 2 or len(input_shape) != 4), \
+        #     'only 4D or 2D tensor supported, got {}D tensor instead'.format(len(input_shape))
         input_shape = tensor_shape.TensorShape(input_shape)
         if not input_shape.ndims:
             raise ValueError('Input has undefined rank:', input_shape)
@@ -77,16 +118,10 @@ class DecorrelatedBN(Layer):
         if self.axis < 0:
             self.axis = ndims + self.axis
 
-        # Raise parameters of fp16 batch norm to fp32
-        if self.dtype == dtypes.float16 or self.dtype == dtypes.bfloat16:
-            param_dtype = dtypes.float32
-        else:
-            param_dtype = self.dtype or dtypes.float32
-
         axis_to_dim = {self.axis: input_shape.dims[self.axis].value}
         if axis_to_dim[self.axis] is None:
             raise ValueError('Input has undefined `axis` dimension. Input shape: ',
-                              input_shape)
+                             input_shape)
         if self.m_per_group == 0 or self.m_per_group > axis_to_dim[self.axis]:
             self.m_per_group = axis_to_dim[self.axis]
 
@@ -108,7 +143,7 @@ class DecorrelatedBN(Layer):
             moving_mean = self.add_weight(
                 name=mean_name,
                 shape=mean_shape,
-                dtype=param_dtype,
+                dtype=self._param_dtype,
                 initializer=self.moving_mean_initializer,
                 synchronization=tf_variables.VariableSynchronization.ON_READ,
                 trainable=False,
@@ -116,7 +151,7 @@ class DecorrelatedBN(Layer):
             moving_projection = self.add_weight(
                 name=projection_name,
                 shape=projection_shape,
-                dtype=param_dtype,
+                dtype=self._param_dtype,
                 initializer=self.moving_projection_initializer,
                 synchronization=tf_variables.VariableSynchronization.ON_READ,
                 trainable=False,
@@ -131,7 +166,7 @@ class DecorrelatedBN(Layer):
             self.gamma = self.add_weight(
                 name='gamma',
                 shape=param_shape,
-                dtype=param_dtype,
+                dtype=self._param_dtype,
                 initializer=self.gamma_initializer,
                 regularizer=self.gamma_regularizer,
                 constraint=self.gamma_constraint,
@@ -139,7 +174,7 @@ class DecorrelatedBN(Layer):
             self.beta = self.add_weight(
                 name='beta',
                 shape=param_shape,
-                dtype=param_dtype,
+                dtype=self._param_dtype,
                 initializer=self.beta_initializer,
                 regularizer=self.beta_regularizer,
                 constraint=self.beta_constraint,
@@ -151,19 +186,31 @@ class DecorrelatedBN(Layer):
         super(DecorrelatedBN, self).build(input_shape)
 
     def call(self, inputs, training=None):
-        if training is None:
-            training = K.learning_phase()
+        training = self._get_training_value(training)
 
-        in_eager_mode = context.executing_eagerly()
         # Compute the axes along which to reduce the mean / variance
-        input_shape = inputs.get_shape()
+        input_shape = inputs.shape
         ndims = len(input_shape)
         reduction_axes = [i for i in range(ndims) if i not in [self.axis]]
 
-        trans = reduction_axes+[self.axis]
-        trans_recover = [i for i in range(self.axis)] + [ndims-1] + [j for j in range(self.axis, ndims-1)]
-        inputs = array_ops.transpose(inputs, perm=trans)
-        transposed_shape = [-1] + inputs.get_shape().as_list()[1:]
+        # Broadcasting only necessary for single-axis batch norm where the axis is
+        # not the last dimension
+        broadcast_shape = [1] * ndims
+        broadcast_shape[self.axis] = input_shape.dims[self.axis].value
+
+        def _broadcast(v):
+            if (v is not None and len(v.get_shape()) != ndims and
+                    reduction_axes != list(range(ndims - 1))):
+                return array_ops.reshape(v, broadcast_shape)
+            return v
+
+        scale, offset = _broadcast(self.gamma), _broadcast(self.beta)
+        if self.axis != ndims-1:
+            trans = reduction_axes+[self.axis]
+            transpose_recover = [i for i in range(self.axis)] + [ndims-1] + [j for j in range(self.axis, ndims-1)]
+            inputs = array_ops.transpose(inputs, perm=trans)
+            transposed_shape = [-1] + inputs.get_shape().as_list()[1:]
+
         inputs = array_ops.reshape(inputs, shape=[-1, input_shape.dims[self.axis].value])
 
         # Determine a boolean value for `training`: could be True, False, or None.
@@ -178,13 +225,10 @@ class DecorrelatedBN(Layer):
                 mean = tf.reduce_mean(group_input, 0, keepdims=True)
                 centered = group_input - mean
 
-                # centered_ = tf.expand_dims(centered, -1)
-                #
-                # sigma = tf.matmul(centered_, tf.matrix_transpose(centered_))
-                # sigma = tf.reduce_mean(sigma, 0)
+                centered_ = tf.expand_dims(centered, -1)
+                sigma = tf.matmul(centered_, tf.linalg.matrix_transpose(centered_))
+                sigma = tf.reduce_mean(sigma, 0)
 
-                sigma = tf.matmul(tf.matrix_transpose(centered), centered)
-                sigma = sigma * 1 / cfg.batch_size
                 projection = self.get_projection(sigma, group_input)
 
                 moving_mean = self.moving_means[i]
@@ -192,30 +236,28 @@ class DecorrelatedBN(Layer):
 
                 mean = tf_utils.smart_cond(training,
                                            lambda: mean,
-                                           lambda: moving_mean)
+                                           lambda: ops.convert_to_tensor(moving_mean))
                 projection = tf_utils.smart_cond(training,
                                                  lambda: projection,
-                                                 lambda: moving_projection)
+                                                 lambda: ops.convert_to_tensor(moving_projection))
 
                 new_mean, new_projection = mean, projection
 
                 def _do_update(var, value):
-                    if in_eager_mode and not self.trainable:
-                        return
+                    return self._assign_moving_average(var, value, self.momentum, None)
 
-                    return self._assign_moving_average(var, value, self.momentum)
+                def mean_update():
+                    true_branch = lambda: _do_update(self.moving_means[i], new_mean)
+                    false_branch = lambda: self.moving_means[i]
+                    return tf_utils.smart_cond(training, true_branch, false_branch)
 
-                mean_update = tf_utils.smart_cond(
-                    training,
-                    lambda: _do_update(self.moving_means[i], new_mean),
-                    lambda: self.moving_means[i])
-                projection_update = tf_utils.smart_cond(
-                    training,
-                    lambda: _do_update(self.moving_projections[i], new_projection),
-                    lambda: self.moving_projections[i])
-                if not context.executing_eagerly():
-                    self.add_update(mean_update, inputs=True)
-                    self.add_update(projection_update, inputs=True)
+                def projection_update():
+                    true_branch = lambda: _do_update(self.moving_projections[i], new_projection)
+                    false_branch = lambda: self.moving_projections[i]
+                    return tf_utils.smart_cond(training, true_branch, false_branch)
+
+                self.add_update(mean_update)
+                self.add_update(projection_update)
 
             else:
                 mean, projection = self.moving_means[i], self.moving_projections[i]
@@ -228,85 +270,46 @@ class DecorrelatedBN(Layer):
             outputs.append(output)
 
         outputs = tf.concat(outputs, 1)
-        outputs = tf.reshape(outputs, shape=transposed_shape)
-        outputs = tf.transpose(outputs, perm=trans_recover)
+        if self.axis != ndims - 1:
+            outputs = tf.reshape(outputs, shape=transposed_shape)
+            outputs = tf.transpose(outputs, perm=transpose_recover)
+        else:
+            outputs = tf.reshape(outputs, shape=[-1]+input_shape.as_list()[1:])
 
-        # Broadcasting only necessary for single-axis batch norm where the axis is
-        # not the last dimension
-        broadcast_shape = [1] * ndims
-        broadcast_shape[self.axis] = input_shape.dims[self.axis].value
-
-        def _broadcast(v):
-            if (v is not None and
-                    len(v.get_shape()) != ndims and
-                    reduction_axes != list(range(ndims - 1))):
-                return array_ops.reshape(v, broadcast_shape)
-            return v
-        scale, offset = _broadcast(self.gamma), _broadcast(self.beta)
+        if scale is not None:
+            scale = math_ops.cast(scale, inputs.dtype)
+            outputs = outputs * scale
         if offset is not None:
             offset = math_ops.cast(offset, inputs.dtype)
-
-        if self.affine:
-            outputs = outputs * scale + offset
+            outputs += offset
 
         # If some components of the shape got lost due to adjustments, fix that.
         outputs.set_shape(input_shape)
         return outputs, projection
 
     def get_projection(self, sigma, inputs):
-        eig, rotation, _ = tf.svd(sigma)
+        eig, rotation, _ = tf.linalg.svd(sigma)
         eig += self.epsilon
         eig = tf.pow(eig, -1 / 2)
-        eig = tf.diag(eig)
+        eig = tf.linalg.diag(eig)
 
         whitten_matrix = tf.matmul(rotation, eig)
         return tf.matmul(whitten_matrix, tf.transpose(rotation))
 
-    def _assign_moving_average(self, variable, value, momentum):
-        with ops.name_scope(None, 'AssignMovingAvg',
-                            [variable, value, momentum]) as scope:
-            # TODO(apassos,srbs,skyewm): the colocation constraints here are disabled
-            # because of a bug which leads cond_v2 to skip rewriting them creating
-            # conflicts.
-            if tf2.enabled():
-                cm = contextlib.contextmanager(lambda: (yield))()
-            else:
-                cm = ops.colocate_with(variable)
-            with cm:
+    def _assign_moving_average(self, variable, value, momentum, inputs_size):
+        with K.name_scope('AssignMovingAvg') as scope:
+            with ops.colocate_with(variable):
                 decay = ops.convert_to_tensor(1.0 - momentum, name='decay')
                 if decay.dtype != variable.dtype.base_dtype:
                     decay = math_ops.cast(decay, variable.dtype.base_dtype)
                 update_delta = (variable - math_ops.cast(value, variable.dtype)) * decay
+                if inputs_size is not None:
+                    update_delta = array_ops.where(inputs_size > 0, update_delta,
+                                                   K.zeros_like(update_delta))
                 return state_ops.assign_sub(variable, update_delta, name=scope)
 
     def compute_output_shape(self, input_shape):
         return input_shape
-
-    def updateOutput_perGroup_train(self, data, groupId):
-        mean = tf.reduce_mean(data, 0)
-        update_means = tf.assign(self.moving_means[groupId],
-                                 self.moving_means[groupId] * (1 - self.momentum) + mean * self.momentum)
-
-        centered = tf.expand_dims(data - mean, -1)
-        # self.summaries.append(tf.summary.histogram('group{}_centered'.format(groupId), centered))
-
-        sigma = tf.matmul(centered, tf.matrix_transpose(centered))
-        sigma = tf.reduce_mean(sigma, 0)
-
-        eig, rotation, _ = tf.svd(sigma)
-        eig += self.eps
-        eig = tf.pow(eig, -1/2)
-        eig = tf.diag(eig)
-
-        whitten_matrix = tf.matmul(rotation, eig)
-        whitten_matrix = tf.matmul(whitten_matrix, tf.transpose(rotation))
-
-        update_projections = tf.assign(self.running_projections[groupId],
-                                 self.running_projections[groupId] * (1 - self.momentum) + whitten_matrix * self.momentum)
-
-        tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_means)
-        tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_projections)
-        return tf.matmul(tf.squeeze(centered), whitten_matrix)
 
 
 class IterativeNormalization(DecorrelatedBN):
@@ -347,7 +350,7 @@ class IterativeNormalization(DecorrelatedBN):
 
     def get_projection(self, sigma, inputs):
         n_feature = inputs.get_shape().dims[-1].value
-        trace = tf.trace(sigma)
+        trace = tf.linalg.trace(sigma)
         sigma_norm = sigma / trace
 
         projection = tf.eye(n_feature)
@@ -359,26 +362,49 @@ class IterativeNormalization(DecorrelatedBN):
         return projection / tf.sqrt(trace)
 
 
+def test_BN():
+    inputs = tf.random.normal([128, 32, 32, 3])
+    outputs = tf.keras.layers.BatchNormalization()(inputs)
 
-if __name__ == "__main__":
-    tf.enable_eager_execution()
-    data = tf.random_normal(shape=[256, 16])
-    sigma = tf.matmul(tf.matrix_transpose(data), data)
-    s, u, v = tf.svd(sigma)
-    y,pro1 = IterativeNormalization(affine=False, iter_num=5)(data, True)
-    y_sigma = tf.matmul(tf.matrix_transpose(y), y)/256
-    s1, u1, v1 = tf.svd(y_sigma)
 
-    y2,pro2 = DecorrelatedBN(affine=False)(data, True)
-    y2_sigma = tf.matmul(tf.matrix_transpose(y2), y2)/256
-    s2, u2, v2 = tf.svd(y2_sigma)
+def test_decorrectedBN():
+    data = tf.random.normal(shape=[256, 5])
+    sigma = tf.matmul(tf.linalg.matrix_transpose(data), data)
+    s, u, vt = tf.linalg.svd(sigma)
+    result = tf.linalg.matmul(tf.linalg.matmul(u, tf.linalg.diag(s)), tf.linalg.matrix_transpose(vt))
+
+    y2, pro2 = DecorrelatedBN(affine=False)(data, True)
+    y2_inference, pro2_inference = DecorrelatedBN(affine=False)(data, False)
+    y2_sigma = tf.matmul(tf.linalg.matrix_transpose(y2), y2) / 256
+    s2, u2, v2 = tf.linalg.svd(y2_sigma)
+    print(s2)
+    print()
+    print(y2_sigma)
+    print()
+    import matplotlib.pyplot as mp, seaborn
+
+    seaborn.heatmap(y2_sigma, center=0, annot=True)
+    mp.show()
+
+
+def test_whitten():
+    data = tf.random.normal(shape=[256, 16])
+    sigma = tf.matmul(tf.linalg.matrix_transpose(data), data)
+    s, u, v = tf.linalg.svd(sigma)
+    y, pro1 = IterativeNormalization(affine=False, iter_num=5)(data, True)
+    y_sigma = tf.matmul(tf.linalg.matrix_transpose(y), y) / 256
+    s1, u1, v1 = tf.linalg.svd(y_sigma)
+
+    y2, pro2 = DecorrelatedBN(affine=False)(data, True)
+    y2_sigma = tf.matmul(tf.linalg.matrix_transpose(y2), y2) / 256
+    s2, u2, v2 = tf.linalg.svd(y2_sigma)
     print(s1)
     print(s2)
     print()
     print(y_sigma)
     print(y2_sigma)
     print()
-    gap = pro1-pro2
+    gap = pro1 - pro2
     print(gap)
 
     import matplotlib.pyplot as mp, seaborn
