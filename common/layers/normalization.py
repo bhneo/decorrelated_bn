@@ -285,7 +285,7 @@ class DecorrelatedBN(Layer):
 
         # If some components of the shape got lost due to adjustments, fix that.
         outputs.set_shape(input_shape)
-        return outputs, projection
+        return outputs
 
     def get_projection(self, sigma, inputs):
         eig, rotation, _ = tf.linalg.svd(sigma)
@@ -373,7 +373,7 @@ def test_decorrectedBN():
     s, u, vt = tf.linalg.svd(sigma)
     result = tf.linalg.matmul(tf.linalg.matmul(u, tf.linalg.diag(s)), tf.linalg.matrix_transpose(vt))
 
-    y2, pro2 = DecorrelatedBN(affine=False)(data, True)
+    y2 = DecorrelatedBN(affine=False)(data, True)
     y2_inference, pro2_inference = DecorrelatedBN(affine=False)(data, False)
     y2_sigma = tf.matmul(tf.linalg.matrix_transpose(y2), y2) / 256
     s2, u2, v2 = tf.linalg.svd(y2_sigma)
@@ -391,11 +391,11 @@ def test_whitten():
     data = tf.random.normal(shape=[256, 16])
     sigma = tf.matmul(tf.linalg.matrix_transpose(data), data)
     s, u, v = tf.linalg.svd(sigma)
-    y, pro1 = IterativeNormalization(affine=False, iter_num=5)(data, True)
+    y = IterativeNormalization(affine=False, iter_num=5)(data, True)
     y_sigma = tf.matmul(tf.linalg.matrix_transpose(y), y) / 256
     s1, u1, v1 = tf.linalg.svd(y_sigma)
 
-    y2, pro2 = DecorrelatedBN(affine=False)(data, True)
+    y2 = DecorrelatedBN(affine=False)(data, True)
     y2_sigma = tf.matmul(tf.linalg.matrix_transpose(y2), y2) / 256
     s2, u2, v2 = tf.linalg.svd(y2_sigma)
     print(s1)
@@ -404,15 +404,4 @@ def test_whitten():
     print(y_sigma)
     print(y2_sigma)
     print()
-    gap = pro1 - pro2
-    print(gap)
 
-    import matplotlib.pyplot as mp, seaborn
-
-    seaborn.heatmap(gap, center=0, annot=True)
-    mp.show()
-    #
-    # seaborn.heatmap(y_sigma, center=0, annot=True)
-    # mp.show()
-    # seaborn.heatmap(y2_sigma, center=0, annot=True)
-    # mp.show()

@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tqdm import tqdm
-from layers import DecorrelatedBN, IterativeNormalization
 from config import cfg
 import data_input
 

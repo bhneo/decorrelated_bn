@@ -1,9 +1,8 @@
 from tensorflow import keras
 from tensorflow.python.keras import layers
-from layers import DecorrelatedBN, IterativeNormalization
+from common.layers import DecorrelatedBN, IterativeNormalization
 from config import cfg
 
-import  tensorflow as tf
 
 def build_mlp(method, hidden_layers, out_num, weight_decay, height=32, width=32, depth=3, m_per_group=0, dbn_affine=True):
     regularizer = keras.regularizers.l2(weight_decay) if weight_decay != 0 else None

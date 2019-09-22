@@ -1,132 +1,132 @@
 import os
-
-import matplotlib.pyplot as plt
-import numpy as np
+import tensorflow_datasets as tfds
 import tensorflow as tf
-from tensorflow import keras
-from config import cfg
+import numpy as np
+import matplotlib.pyplot as plt
+
+from common import utils
 
 
-def load_data_on_memory(dataset):
-    if dataset == 'mnist':
-        data = keras.datasets.mnist
-    elif dataset == 'fashion_mnist':
-        data = keras.datasets.fashion_mnist
-    elif dataset == 'cifar10':
-        data = keras.datasets.cifar10
-    elif dataset == 'cifar100':
-        data = keras.datasets.cifar100
-    else:
-        data = keras.datasets.cifar10
-
-    (train_images, train_labels), (test_images, test_labels) = data.load_data()
-
-    if len(train_images.shape) == 3:
-        train_images = np.expand_dims(train_images, -1)
-
-    if len(test_images.shape) == 3:
-        test_images = np.expand_dims(test_images, -1)
-
-    return train_images, train_labels, test_images, test_labels
+def download_and_check(name):
+    dataset, info = tfds.load(name, data_dir=name, with_info=True)
+    print(info.features['image'].shape)
+    print(info.features['label'].num_classes)
+    print(info.splits['train'].num_examples)
+    print(info.splits['test'].num_examples)
+    print(info)
 
 
-def get_input(dataset):
-    if dataset in ['mnist', 'fashion_mnist', 'cifar10', 'cifar100']:
-        train_images, train_labels, test_images, test_labels = load_data_on_memory(dataset)
-        image_height, image_width, image_depth = train_images.shape[1], train_images.shape[2], train_images.shape[3]
+def build_parse(height, width, channel, image_standardization=True, flip=True, crop=True, brightness=False, contrast=False):
+    image_standardization = utils.str2bool(image_standardization)
+    flip = utils.str2bool(flip)
+    crop = utils.str2bool(crop)
+    brightness = utils.str2bool(brightness)
+    contrast = utils.str2bool(contrast)
 
-        def parse_train(image, label):
+    def parse(image, label):
+        image = tf.cast(image, tf.float32)
+        if image_standardization:
             image = tf.image.per_image_standardization(image)
-            if cfg.augment:
-                image = tf.image.random_flip_left_right(image)
-                image = tf.image.resize_image_with_crop_or_pad(image, image_height + 8, image_width + 8)
-                image = tf.random_crop(image, [image_height, image_width, image_depth])
-            return image, label
+        if flip:
+            image = tf.image.random_flip_left_right(image)
+        if crop:
+            image = tf.image.resize_with_crop_or_pad(image, height+8, width+8)
+            image = tf.image.random_crop(image, [height, width, channel])
+        if brightness:
+            image = tf.image.random_brightness(image, max_delta=63)
+        if contrast:
+            image = tf.image.random_contrast(image, lower=0.2, upper=1.8)
+        return image, label
+    return parse
 
-        def parse_test(image, label):
-            return tf.image.per_image_standardization(image), label
 
-        train_set = tf.data.Dataset.from_tensor_slices((train_images, train_labels))\
-            .map(parse_train, num_parallel_calls=tf.data.experimental.AUTOTUNE).repeat().batch(cfg.batch_size)
-        test_set = tf.data.Dataset.from_tensor_slices((test_images, test_labels))\
-            .map(parse_test, num_parallel_calls=tf.data.experimental.AUTOTUNE).repeat().batch(cfg.batch_size)
-        steps_per_epoch = train_images.shape[0]//cfg.batch_size
-        validation_steps = test_images.shape[0]//cfg.batch_size
-        if validation_steps == 0:
-            validation_steps = 1
-    elif dataset == 'imagenet':
-        def parse_tfrecords(example_proto):
-            features = {"image": tf.FixedLenFeature([], tf.string, default_value=""),
-                        "height": tf.FixedLenFeature([1], tf.int64, default_value=[0]),
-                        "width": tf.FixedLenFeature([1], tf.int64, default_value=[0]),
-                        "label": tf.FixedLenFeature([1], tf.int64, default_value=[0])
-                        }
-            parsed_features = tf.parse_single_example(example_proto, features)
-            image, image_height, image_width, label = parsed_features['image'], parsed_features['height'], \
-                                                      parsed_features['width'], parsed_features['label']
-            image_decoded = tf.cast(tf.image.decode_jpeg(image, channels=3), tf.float32)
-            return image_decoded, image_height, image_width, label
-
-        def parse_train(example_proto):
-            image_decoded, image_height, image_width, label = parse_tfrecords(example_proto)
-            if cfg.augment:
-                random_s = tf.random_uniform([1], minval=256, maxval=481, dtype=tf.int32)[0]
-                resized_height, resized_width = tf.cond(image_height < image_width,
-                                                        lambda: (random_s, tf.cast(
-                                                            tf.multiply(tf.cast(image_width, tf.float64),
-                                                                        tf.divide(random_s, image_height)), tf.int32)),
-                                                        lambda: (tf.cast(tf.multiply(tf.cast(image_height, tf.float64),
-                                                                                     tf.divide(random_s, image_width)),
-                                                                         tf.int32), random_s))
-
-                image_resized = tf.image.resize_images(image_decoded, [resized_height, resized_width])
-                image_flipped = tf.image.random_flip_left_right(image_resized)
-                image_cropped = tf.random_crop(image_flipped, [224, 224, 3])
-                image = tf.image.random_brightness(image_cropped, max_delta=63)
-                image = tf.image.random_contrast(image, lower=0.2, upper=1.8)
-            else:
-                image = tf.image.resize_images(image_decoded, [224, 224])
-
-            image = tf.image.per_image_standardization(image)
-            return image, label
-
-        def parse_test(example_proto):
-            image_decoded, image_height, image_width, label = parse_tfrecords(example_proto)
-            image = tf.image.resize_images(image_decoded, [224, 224])
-            return tf.image.per_image_standardization(image), label
-
-        train_files_names = os.listdir(cfg.data_set_path + 'train/')
-        train_files = [cfg.data_set_path + 'train/' + item for item in train_files_names]
-        train_set = tf.data.TFRecordDataset(train_files)\
-            .map(parse_train, num_parallel_calls=tf.data.experimental.AUTOTUNE)\
-            .batch(cfg.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
-
-        test_files_names = os.listdir(cfg.data_set_path + 'valid/')
-        test_files = [cfg.data_set_path + 'valid/' + item for item in test_files_names]
-        test_set = tf.data.TFRecordDataset(test_files) \
-            .map(parse_test, num_parallel_calls=tf.data.experimental.AUTOTUNE) \
-            .batch(cfg.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
-
-        steps_per_epoch = 1281167 // cfg.batch_size
-        validation_steps = 50000 // cfg.batch_size
+def load_data(name):
+    if name in tfds.list_builders():
+        return tfds.load(name, data_dir=name, with_info=True, as_supervised=True)
     else:
-        raise ValueError('Dataset not supported yet:', dataset)
+        pass
 
-    return train_set, test_set, steps_per_epoch, validation_steps
+
+def build_dataset(name, data_dir='data', batch_size=128, buffer_size=50000, image_standardization=True, flip=True, crop=True, brightness=False, contrast=False):
+    dataset, info = tfds.load(name, data_dir=os.path.join(data_dir, name), with_info=True, as_supervised=True)
+    train = dataset['train']
+    test = dataset['test']
+    image_height, image_width, image_channel = info.features['image'].shape[0], info.features['image'].shape[1], info.features['image'].shape[2]
+
+    if buffer_size > 0:
+        train = train.shuffle(buffer_size=buffer_size)
+
+    train = train.map(build_parse(image_height,
+                                  image_width,
+                                  image_channel,
+                                  image_standardization=image_standardization,
+                                  flip=flip,
+                                  crop=crop,
+                                  brightness=brightness,
+                                  contrast=contrast),
+                      num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+        .batch(batch_size)\
+        .prefetch(tf.data.experimental.AUTOTUNE)
+    test = test.map(build_parse(image_height,
+                                image_width,
+                                image_channel,
+                                image_standardization=image_standardization,
+                                flip=False,
+                                crop=False,
+                                brightness=False,
+                                contrast=False),
+                    num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+        .batch(batch_size)\
+        .prefetch(tf.data.experimental.AUTOTUNE)
+    return train, test, info
+
+
+def count_data(name):
+    train, test, info = build_dataset(name)
+    train_num = 0
+    for image, label in train:
+        train_num += image.shape[0]
+
+    test_num = 0
+    for image, label in test:
+        test_num += image.shape[0]
+
+    print('train num:', train_num)
+    print('test num:', test_num)
+
+
+def view_data(name, data_dir='data', img_stand=False):
+    train, test, info = build_dataset(name, data_dir=data_dir, image_standardization=img_stand)
+    for image, label in train:
+        if not img_stand:
+            image /= 255.
+        out_image(image, label)
+        break
+
+    for image, label in test:
+        if not img_stand:
+            image /= 255.
+        out_image(image, label)
+        break
+
+
+def out_image(images, labels):
+    plt.figure()
+    for i in range(16):
+        plt.subplot(4,4,i+1)
+        plt.title(labels[i].numpy())
+        image = images[i, :, :, :]
+        if image.shape[-1] == 1:
+            image = np.squeeze(image, -1)
+            plt.imshow(image, cmap='gray')
+        else:
+            plt.imshow(image)
+    plt.subplots_adjust(hspace=0.5)
+    plt.show()
 
 
 if __name__ == "__main__":
-    train_images, train_labels, test_images, test_labels = load_data_on_memory('mnist')
-    if train_images.shape[-1] == 1:
-        train_images = train_images[:, :, :, 0]
-    plt.figure(figsize=(10, 10))
-    for i in range(25):
-        plt.subplot(5, 5, i + 1)
-        plt.xticks([])
-        plt.yticks([])
-        plt.grid(False)
-        if len(train_images.shape) == 3:
-            plt.imshow(train_images[i], cmap='gray')
-        else:
-            plt.imshow(train_images[i], cmap=plt.cm.binary)
-    plt.show()
+    # download_and_check('cifar10')
+    # count_data('cifar10')
+    view_data('fashion_mnist', '', False)
+

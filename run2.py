@@ -1,5 +1,4 @@
 import data_input
-import model_builder
 import os
 
 import tensorflow as tf
@@ -8,11 +7,8 @@ import matplotlib.pyplot as plt
 
 from config import cfg
 from tensorflow import keras
-from layers import DecorrelatedBN, IterativeNormalization, DecorelateBNPowerIter2
+from common.layers import DecorrelatedBN, IterativeNormalization
 from tensorflow.python.keras import layers
-from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
-from tensorflow.python.keras.backend import set_session
-from tensorflow.python.keras.backend import clear_session
 
 
 def build_vgg(method, filters, repeats, out_num, weight_decay, height=32, width=32, depth=3, m_per_group=16, dbn_affine=True):
