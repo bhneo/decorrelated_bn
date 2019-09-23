@@ -2,13 +2,11 @@
 The implementations of Decorrelated Batch Normalization, including DecorrelatedBN and DecorrelatedBNPowerIter.
 """
 
-import contextlib
-
+import matplotlib.pyplot as mp
 import numpy as np
+import seaborn
 import tensorflow as tf
-# from config import cfg
-from tensorflow.python import tf2
-from tensorflow.python.eager import context
+
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
@@ -384,6 +382,17 @@ def test_decorrectedBN():
     import matplotlib.pyplot as mp, seaborn
 
     seaborn.heatmap(y2_sigma, center=0, annot=True)
+    mp.show()
+
+
+def test_cnn_dbn():
+    data = tf.random.normal(shape=[16, 4, 4, 32])
+    y = DecorrelatedBN(m_per_group=16)(data, True)
+    y_ = tf.reshape(y, [256, 32])
+    y_sigma = tf.matmul(tf.linalg.matrix_transpose(y_), y_) / 256
+    print()
+
+    seaborn.heatmap(y_sigma, center=0, annot=True)
     mp.show()
 
 
