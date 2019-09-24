@@ -5,6 +5,7 @@ The implementations of Decorrelated Batch Normalization, including DecorrelatedB
 import matplotlib.pyplot as mp
 import numpy as np
 import seaborn
+import time
 import tensorflow as tf
 
 from config import config as cfg
@@ -429,4 +430,33 @@ def test_whitten():
     print(y_sigma)
     print(y2_sigma)
     print()
+
+
+def test_speed():
+    data = tf.random.normal(shape=[100, 128, 128])
+    @tf.function
+    def func(data):
+        t1 = time.time()
+        s1, u1, v1 = tf.linalg.svd(data)
+        t2 = time.time()
+        print('t1:', t2-t1)
+
+        s2, u2, v2 = [], [], []
+        for i in range(100):
+            s, u, v = tf.linalg.svd(tf.expand_dims(data[i], 0))
+            s2.append(s)
+            u2.append(u)
+            v2.append(v)
+        t3 = time.time()
+        print('t2:', t3-t2)
+
+        s2 = tf.concat(s2, 0)
+        u2 = tf.concat(u2, 0)
+        v2 = tf.concat(v2, 0)
+
+        print(tf.reduce_sum(s1 - s2))
+        print(tf.reduce_sum(u1 - u2))
+        print(tf.reduce_sum(v1 - v2))
+
+    func(data)
 
