@@ -386,12 +386,18 @@ def test_decorrectedBN():
 
 
 def test_cnn_dbn():
-    data = tf.random.normal(shape=[16, 4, 4, 32])
-    y = DecorrelatedBN(m_per_group=16)(data, True)
-    y_ = tf.reshape(y, [256, 32])
+    data = tf.random.normal(shape=[2, 4, 4, 16])
+    data = tf.concat([data, data, data, data, data, data, data, data], 0)
+    x = tf.reshape(data, [256, 16])
+    x_sigma = tf.matmul(tf.linalg.matrix_transpose(x), x) / 256
+    print()
+    seaborn.heatmap(x_sigma, center=0, annot=True)
+    mp.show()
+
+    y = DecorrelatedBN(m_per_group=8)(data, True)
+    y_ = tf.reshape(y, [256, 16])
     y_sigma = tf.matmul(tf.linalg.matrix_transpose(y_), y_) / 256
     print()
-
     seaborn.heatmap(y_sigma, center=0, annot=True)
     mp.show()
 
