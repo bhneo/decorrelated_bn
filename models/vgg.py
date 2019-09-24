@@ -24,7 +24,9 @@ model_name += '_trial{}'.format(str(cfg.training.idx))
 
 
 def build_model(shape, num_out):
-    if cfg.model.layer_num == 11:  # A
+    if cfg.model.layer_num == 8:
+        repetitions = [1, 1, 1, 1, 1]
+    elif cfg.model.layer_num == 11:  # A
         repetitions = [1, 1, 2, 2, 2]
     elif cfg.model.layer_num == 13:  # B
         repetitions = [2, 2, 2, 2, 2]
@@ -62,10 +64,17 @@ def build_output(out_num, x):
 
 def build(inputs, num_out, block_fn, repetitions, bn_type, m, affine):
     log = utils.TensorLog()
-    backbone = blocks.build_vgg_backbone(inputs, repetitions, block_fn, bn=bn_type, m=m, affine=affine, start_filters=64, weight_decay=WEIGHT_DECAY)
-    log.add_hist('backbone', backbone)
+    block = inputs
+    filters = 64
+    for i, layer_num in enumerate(repetitions):
+        block = block_fn(block, layer_num, filters, bn_type=bn_type, m=m, affine=affine, iter=cfg.normalize.iter,
+                         weight_decay=WEIGHT_DECAY)
+        log.add_hist('block{}'.format(i+1), block)
+        if filters < 512:
+            filters *= 2
 
-    prob = build_output(num_out, backbone)
+    prob = build_output(num_out, block)
+    log.add_hist('prob', prob)
     return prob, log
 
 

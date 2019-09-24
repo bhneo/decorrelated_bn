@@ -7,6 +7,8 @@ import numpy as np
 import seaborn
 import tensorflow as tf
 
+from config import config as cfg
+
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
@@ -29,7 +31,7 @@ class DecorrelatedBN(Layer):
 
     def __init__(self,
                  axis=-1,
-                 momentum=0.99,
+                 momentum=0.9,
                  epsilon=1e-5,
                  m_per_group=0,
                  affine=True,
@@ -130,7 +132,7 @@ class DecorrelatedBN(Layer):
         dim = axis_to_dim[self.axis]
         for i in range(0, self.groups):
             mean_name = 'moving_mean{}'.format(i)
-            projection_name = 'moving_variance{}'.format(i)
+            projection_name = 'moving_projection{}'.format(i)
             if i < self.groups - 1:
                 mean_shape = [1, self.m_per_group]
                 projection_shape = [self.m_per_group, self.m_per_group]
@@ -145,7 +147,8 @@ class DecorrelatedBN(Layer):
                 initializer=self.moving_mean_initializer,
                 synchronization=tf_variables.VariableSynchronization.ON_READ,
                 trainable=False,
-                aggregation=tf_variables.VariableAggregation.MEAN)
+                aggregation=tf_variables.VariableAggregation.MEAN,
+                experimental_autocast=False)
             moving_projection = self.add_weight(
                 name=projection_name,
                 shape=projection_shape,
@@ -153,7 +156,8 @@ class DecorrelatedBN(Layer):
                 initializer=self.moving_projection_initializer,
                 synchronization=tf_variables.VariableSynchronization.ON_READ,
                 trainable=False,
-                aggregation=tf_variables.VariableAggregation.MEAN)
+                aggregation=tf_variables.VariableAggregation.MEAN,
+                experimental_autocast=False)
 
             self.moving_means.append(moving_mean)
             self.moving_projections.append(moving_projection)
@@ -168,7 +172,8 @@ class DecorrelatedBN(Layer):
                 initializer=self.gamma_initializer,
                 regularizer=self.gamma_regularizer,
                 constraint=self.gamma_constraint,
-                trainable=True)
+                trainable=True,
+                experimental_autocast=False)
             self.beta = self.add_weight(
                 name='beta',
                 shape=param_shape,
@@ -176,7 +181,8 @@ class DecorrelatedBN(Layer):
                 initializer=self.beta_initializer,
                 regularizer=self.beta_regularizer,
                 constraint=self.beta_constraint,
-                trainable=True)
+                trainable=True,
+                experimental_autocast=False)
         else:
             self.gamma = None
             self.beta = None
@@ -214,6 +220,7 @@ class DecorrelatedBN(Layer):
         # Determine a boolean value for `training`: could be True, False, or None.
         training_value = tf_utils.constant_value(training)
         outputs = []
+        height, width = input_shape.as_list()[1], input_shape.as_list()[2]
         for i in range(self.groups):
             start_index = i * self.m_per_group
             end_index = np.min(((i + 1) * self.m_per_group, input_shape.dims[self.axis].value))
@@ -223,9 +230,12 @@ class DecorrelatedBN(Layer):
                 mean = tf.reduce_mean(group_input, 0, keepdims=True)
                 centered = group_input - mean
 
-                centered_ = tf.expand_dims(centered, -1)
-                sigma = tf.matmul(centered_, tf.linalg.matrix_transpose(centered_))
-                sigma = tf.reduce_mean(sigma, 0)
+                # centered_ = tf.expand_dims(centered, -1)
+                # sigma = tf.matmul(centered_, tf.linalg.matrix_transpose(centered_))
+                # sigma = tf.reduce_mean(sigma, 0)
+
+                sigma = tf.matmul(tf.linalg.matrix_transpose(centered), centered)
+                sigma /= (cfg.training.batch_size*height*width)
 
                 projection = self.get_projection(sigma, group_input)
 
@@ -352,8 +362,8 @@ class IterativeNormalization(DecorrelatedBN):
         sigma_norm = sigma / trace
 
         projection = tf.eye(n_feature)
-        x1 = projection * projection
-        x2 = tf.matmul(projection, projection)
+        # x1 = projection * projection
+        # x2 = tf.matmul(projection, projection)
         for i in range(self.iter_num):
             projection = (3 * projection - projection * projection * projection * sigma_norm) / 2
 
