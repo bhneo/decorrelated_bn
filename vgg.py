@@ -17,12 +17,17 @@ kernel_initializer = keras.initializers.he_normal()
 BASE_NAME = 'vgg'
 
 arch = {
+    'A': [64, 'M', 128, 'M', 256, 'M', 512, 'M', 512],
+    'B': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512],
+    'C': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512],
+    'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512],
     'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512],
 }
 
 
 def build_model_name(params):
     model_name = BASE_NAME
+    model_name += '_{}'.format(params.model.type)
     model_name += '_bs{}'.format(params.training.batch_size)
     model_name += '_lr{}'.format(params.training.lr)
     model_name += '_{}'.format(params.normalize.method)
@@ -40,7 +45,7 @@ def build_model(shape, num_out, params):
     model_name = build_model_name(params)
 
     probs, tensor_log = build(inputs, num_out,
-                              arch['E'],
+                              arch[params.model.type],
                               params.normalize.method,
                               params.normalize.m,
                               params.normalize.iter)

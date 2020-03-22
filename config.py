@@ -21,6 +21,7 @@ params.training.save_frequency = 10
 
 params.model = EasyDict()
 params.model.arch = 'vgg'  # which model to use
+params.model.type = 'A'
 
 params.normalize = EasyDict()
 params.normalize.method = 'dbn'
@@ -42,6 +43,7 @@ def parse_args():
     parser.add_argument('--idx', default=params.training.idx, help='the index of trial')
     parser.add_argument('--save', default=params.training.save_frequency, help='save frequency')
     parser.add_argument('--arch', default=params.model.arch, help='model architecture')
+    parser.add_argument('--type', default=params.model.type, help='type')
     parser.add_argument('--method', default=params.normalize.method, help='whiten method')
     parser.add_argument('--m', default=params.normalize.m, help='size of per group')
     parser.add_argument('--iter', default=params.normalize.iter, help='iterations for iter-norm')
@@ -62,6 +64,7 @@ def build_config(args, build_params):
     build_params.training.idx = args.idx
     build_params.training.save_frequency = args.save
     build_params.model.arch = args.arch
+    build_params.model.type = args.type
     build_params.normalize.method = args.method
     build_params.normalize.m = int(args.m)
     build_params.normalize.iter = int(args.iter)
