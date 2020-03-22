@@ -7,6 +7,24 @@ import matplotlib.pyplot as plt
 from common import utils
 
 
+class DataInfo(object):
+    def __init__(self,
+                 features=None,
+                 splits=None):
+        if features and not isinstance(features, tfds.features.FeaturesDict):
+            raise TypeError('not the instance of tensorflow_dataset.features.FeaturesDict')
+        self.features = features
+        self.splits = splits
+
+    def from_tfds_info(self, dataset_info):
+        if not isinstance(dataset_info, tfds.core.DatasetInfo):
+            raise TypeError('not the instance of tensorflow_dataset.core.DatasetInfo')
+        self.features = dataset_info.features
+        self.splits = {'train_examples': dataset_info.splits['train'].num_examples,
+                       'test_examples': dataset_info.splits['test'].num_examples}
+        return self
+
+
 def download_and_check(name):
     dataset, info = tfds.load(name, data_dir=name, with_info=True)
     print(info.features['image'].shape)
@@ -27,6 +45,8 @@ def build_parse(height, width, channel, image_standardization=True, flip=True, c
         image = tf.cast(image, tf.float32)
         if image_standardization:
             image = tf.image.per_image_standardization(image)
+        else:
+            image = tf.divide(image, 255.)
         if flip:
             image = tf.image.random_flip_left_right(image)
         if crop:
@@ -47,8 +67,12 @@ def load_data(name):
         pass
 
 
-def build_dataset(name, data_dir='data', batch_size=128, buffer_size=50000, image_standardization=True, flip=True, crop=True, brightness=False, contrast=False):
-    dataset, info = tfds.load(name, data_dir=os.path.join(data_dir, name), with_info=True, as_supervised=True)
+def build_dataset(name, path='data', parser_train=None, parser_test=None,
+                  batch_size=128, buffer_size=50000,
+                  image_standardization=True, flip=True, crop=True,
+                  brightness=False, contrast=False):
+    dataset, info = tfds.load(name, data_dir=os.path.join(path, name), with_info=True, as_supervised=True)
+    info = DataInfo().from_tfds_info(info)
     train = dataset['train']
     test = dataset['test']
     image_height, image_width, image_channel = info.features['image'].shape[0], info.features['image'].shape[1], info.features['image'].shape[2]
@@ -56,33 +80,37 @@ def build_dataset(name, data_dir='data', batch_size=128, buffer_size=50000, imag
     if buffer_size > 0:
         train = train.shuffle(buffer_size=buffer_size)
 
-    train = train.map(build_parse(image_height,
-                                  image_width,
-                                  image_channel,
-                                  image_standardization=image_standardization,
-                                  flip=flip,
-                                  crop=crop,
-                                  brightness=brightness,
-                                  contrast=contrast),
+    if parser_train is None:
+        parser_train = build_parse(image_height,
+                                   image_width,
+                                   image_channel,
+                                   image_standardization=image_standardization,
+                                   flip=flip,
+                                   crop=crop,
+                                   brightness=brightness,
+                                   contrast=contrast)
+    train = train.map(parser_train,
                       num_parallel_calls=tf.data.experimental.AUTOTUNE)\
         .batch(batch_size)\
         .prefetch(tf.data.experimental.AUTOTUNE)
-    test = test.map(build_parse(image_height,
-                                image_width,
-                                image_channel,
-                                image_standardization=image_standardization,
-                                flip=False,
-                                crop=False,
-                                brightness=False,
-                                contrast=False),
+    if parser_test is None:
+        parser_test = build_parse(image_height,
+                                  image_width,
+                                  image_channel,
+                                  image_standardization=image_standardization,
+                                  flip=False,
+                                  crop=False,
+                                  brightness=False,
+                                  contrast=False)
+    test = test.map(parser_test,
                     num_parallel_calls=tf.data.experimental.AUTOTUNE)\
         .batch(batch_size)\
         .prefetch(tf.data.experimental.AUTOTUNE)
     return train, test, info
 
 
-def count_data(name):
-    train, test, info = build_dataset(name)
+def count_data(name, path='data'):
+    train, test, info = build_dataset(name, path)
     train_num = 0
     for image, label in train:
         train_num += image.shape[0]
@@ -95,8 +123,8 @@ def count_data(name):
     print('test num:', test_num)
 
 
-def view_data(name, data_dir='data', img_stand=False):
-    train, test, info = build_dataset(name, data_dir=data_dir, image_standardization=img_stand)
+def view_data(name, path='data', img_stand=False):
+    train, test, info = build_dataset(name, path, image_standardization=img_stand)
     for image, label in train:
         if not img_stand:
             image /= 255.

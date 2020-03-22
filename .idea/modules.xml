@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/DecorrelatedBN_TF.iml" filepath="$PROJECT_DIR$/.idea/DecorrelatedBN_TF.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/decorrelated_bn.iml" filepath="$PROJECT_DIR$/.idea/decorrelated_bn.iml" />
     </modules>
   </component>
 </project>
