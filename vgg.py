@@ -31,7 +31,8 @@ def build_model_name(params):
     model_name += '_bs{}'.format(params.training.batch_size)
     model_name += '_lr{}'.format(params.training.lr)
     model_name += '_{}'.format(params.normalize.method)
-    model_name += '_m{}'.format(params.normalize.m)
+    if params.normalize.m != 0:
+        model_name += '_m{}'.format(params.normalize.m)
     if params.normalize.method == 'iter_norm':
         model_name += '_iter{}'.format(params.normalize.iter)
     if params.normalize.affine:
@@ -68,7 +69,7 @@ def build_model(shape, num_out, params):
 def build(inputs, num_out, arch, method, m, iter):
     log = utils.TensorLog()
     feature = inputs
-    for layer in arch:
+    for i, layer in enumerate(arch):
         if layer == 'M':
             feature = keras.layers.MaxPool2D(pool_size=(2, 2), strides=(2, 2))(feature)
         else:
@@ -84,7 +85,8 @@ def build(inputs, num_out, arch, method, m, iter):
             elif method == 'iter_norm':
                 feature = layers.DecorelationNormalization(m_per_group=m,
                                                            decomposition='iter_norm_wm',
-                                                           iter_num=iter)(feature)
+                                                           iter_num=iter, affine=False)(feature)
+            log.add_hist('bn{}'.format(i+1), feature)
             feature = keras.layers.ReLU()(feature)
 
     feature = keras.layers.AveragePooling2D(pool_size=(2, 2))(feature)

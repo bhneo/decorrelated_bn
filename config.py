@@ -14,7 +14,7 @@ params.dataset.crop = True
 
 params.training = EasyDict()
 params.training.batch_size = 128
-params.training.epoch = 160
+params.training.epochs = 160
 params.training.lr = 0.1
 params.training.idx = 1
 params.training.save_frequency = 10
@@ -38,7 +38,7 @@ def parse_args():
     parser.add_argument('--flip', default=params.dataset.flip, help='dataset config')
     parser.add_argument('--crop', default=params.dataset.crop, help='dataset config')
     parser.add_argument('--batch', default=params.training.batch_size, help='the training batch_size')
-    parser.add_argument('--epoch', default=params.training.epoch, help='the total training epochs')
+    parser.add_argument('--epochs', default=params.training.epochs, help='the total training epochs')
     parser.add_argument('--lr', default=params.training.lr, help='initial learning rate')
     parser.add_argument('--idx', default=params.training.idx, help='the index of trial')
     parser.add_argument('--save', default=params.training.save_frequency, help='save frequency')
@@ -59,7 +59,7 @@ def build_config(args, build_params):
     build_params.dataset.flip = utils.str2bool(args.flip)
     build_params.dataset.crop = utils.str2bool(args.crop)
     build_params.training.batch_size = int(args.batch)
-    build_params.training.epoch = int(args.epoch)
+    build_params.training.epochs = int(args.epochs)
     build_params.training.lr = float(args.lr)
     build_params.training.idx = args.idx
     build_params.training.save_frequency = args.save

@@ -138,7 +138,7 @@ class DecorelationNormalization(Layer):
         else:
             raise ValueError('shape not support:{}'.format(shape))
 
-        bs = K.shape(inputs)[0]
+        bs = tf.shape(inputs)[0]
 
         m, f = utils.center(inputs, self.moving_mean, w, h, c, self.instance_norm)
         get_inv_sqrt = utils.get_decomposition(self.decomposition, bs, self.group, self.instance_norm, self.iter_num,
@@ -154,14 +154,14 @@ class DecorelationNormalization(Layer):
                 ff_aprs = (1 - self.epsilon) * ff_aprs + tf.expand_dims(tf.eye(self.m_per_group) * self.epsilon, 0)
 
             whitten_matrix = get_inv_sqrt(ff_aprs, self.m_per_group)[1]
-
-            self.add_update([K.moving_average_update(self.moving_mean,
-                                                     m,
-                                                     self.momentum),
-                             K.moving_average_update(self.moving_matrix,
-                                                     whitten_matrix if '_wm' in self.decomposition else ff_aprs,
-                                                     self.momentum)],
-                            inputs)
+            if self.instance_norm != 1:
+                self.add_update([K.moving_average_update(self.moving_mean,
+                                                         m,
+                                                         self.momentum),
+                                 K.moving_average_update(self.moving_matrix,
+                                                         whitten_matrix if '_wm' in self.decomposition else ff_aprs,
+                                                         self.momentum)],
+                                inputs)
             return whitten_matrix
 
         def test():
@@ -180,8 +180,8 @@ class DecorelationNormalization(Layer):
         else:
             inv_sqrt = K.in_train_phase(train, test, training=training)
             f = tf.reshape(f, [self.group, self.m_per_group, -1])
-            f_hat = tf.matmul(inv_sqrt, f)
-            decorelated = K.reshape(f_hat, [c, bs, w, h])
+            f_hat = tf.matmul(inv_sqrt, f, name='whiten')
+            decorelated = tf.reshape(f_hat, [c, bs, w, h])
             decorelated = tf.transpose(decorelated, [1, 2, 3, 0])
 
         if w == 1:
@@ -193,7 +193,7 @@ class DecorelationNormalization(Layer):
             decorelated = decorelated * scale
         if self.beta is not None:
             offset = math_ops.cast(self.beta, inputs.dtype)
-            decorelated = decorelated * offset
+            decorelated = decorelated + offset
         return decorelated
 
     def compute_output_shape(self, input_shape):
@@ -230,6 +230,7 @@ def test_cnn_dbn():
     mp.show()
 
     y = DecorelationNormalization(m_per_group=0, affine=False)(data, True)
+    y = DecorelationNormalization(m_per_group=0, affine=False)(data, False)
     y_ = tf.reshape(y, [256, 16])
     y_sigma = tf.matmul(tf.linalg.matrix_transpose(y_), y_) / 256
     print()

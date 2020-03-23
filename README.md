@@ -8,7 +8,7 @@ from Lei Huang, Dawei Yang, Bo Lang, Jia Deng.
 
 ### Running experiments
 ```buildoutcfg
-python vgg.py --type=A --batch_size=256 --lr=0.1 --method=dbn --m=0
+python vgg.py --type=A --batch=256 --lr=0.1 --method=dbn --m=0
 ```
 
 recent result on cnn:
