@@ -5,7 +5,7 @@ sys.path.append(os.getcwd())
 
 import tensorflow as tf
 from tensorflow import keras
-from common import layers, utils, train
+from common import normalization, utils, train
 import data_input
 import config
 
@@ -78,14 +78,14 @@ def build(inputs, num_out, arch, method, m, iter):
                                           kernel_initializer=kernel_initializer,
                                           kernel_regularizer=kernel_regularizer)(feature)
             if method == 'bn':
-                feature = keras.layers.BatchNormalization(axis=-1)(feature)
+                feature = keras.layers.BatchNormalization()(feature)
             elif method == 'dbn':
-                feature = layers.DecorelationNormalization(m_per_group=m,
-                                                           decomposition='zca_wm')(feature)
+                feature = normalization.DecorelationNormalization(m_per_group=m,
+                                                                  decomposition='zca_wm')(feature)
             elif method == 'iter_norm':
-                feature = layers.DecorelationNormalization(m_per_group=m,
-                                                           decomposition='iter_norm_wm',
-                                                           iter_num=iter, affine=False)(feature)
+                feature = normalization.DecorelationNormalization(m_per_group=m,
+                                                                  decomposition='iter_norm_wm',
+                                                                  iter_num=iter)(feature)
             log.add_hist('bn{}'.format(i+1), feature)
             feature = keras.layers.ReLU()(feature)
 
