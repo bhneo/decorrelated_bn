@@ -1,7 +1,6 @@
 import os
 
 import tensorflow as tf
-import numpy as np
 from tensorflow.python.keras import backend as K
 from tensorflow.python.ops import summary_ops_v2
 
