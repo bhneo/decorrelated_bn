@@ -16,9 +16,9 @@ and IterNorm whitening in paper:
 
 
 ### Running experiments
-To reproduce the VGG-network experiment, just run "vgg.py" and pass the config parameters.
+To reproduce the VGG-network experiment, just run `vgg.py` and pass the config parameters.
 For example: 
-```buildoutcfg
+```
 python vgg.py --type=A --batch=256 --lr=0.1 --method=zca --m=0
 ```
 where the "type" denotes the type of VGG-network architecture, 
@@ -27,7 +27,18 @@ where the "type" denotes the type of VGG-network architecture,
 "m" denotes the group size (0 indicates full whitening).
 
 ### Usage
+An example can be found in `vgg.py`.
 
+1) Copy the common/normalization.py to your root directory and import it.
+2) Build a DecorelationNormalization layer to replace the batch normalization layer.
+
+```python
+from common import normalization
+
+...
+feature = normalization.DecorelationNormalization(decomposition='iter_norm_wm',
+                                                  iter_num=5)(feature)
+```
 
 ### Reference
 More deteils please refer to the implementations:
