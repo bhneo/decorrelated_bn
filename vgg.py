@@ -79,7 +79,7 @@ def build(inputs, num_out, arch, method, m, iter):
                                           kernel_regularizer=kernel_regularizer)(feature)
             if method == 'bn':
                 feature = keras.layers.BatchNormalization()(feature)
-            elif method == 'dbn':
+            elif method == 'zca':
                 feature = normalization.DecorelationNormalization(m_per_group=m,
                                                                   decomposition='zca_wm')(feature)
             elif method == 'iter_norm':
