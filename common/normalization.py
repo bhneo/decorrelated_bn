@@ -272,7 +272,7 @@ def get_decomposition(decomposition, batch_size, group, instance_norm, iter_num,
             projection = tf.expand_dims(projection, 0)
             projection = tf.tile(projection, [group, 1, 1])
             for i in range(iter_num):
-                projection = (3 * projection - projection * projection * projection * sigma_norm) / 2
+                projection = (3 * projection - tf.matmul(tf.matmul(tf.matmul(projection, projection), projection), sigma_norm)) / 2
 
             return None, projection / tf.sqrt(trace)
     else:
